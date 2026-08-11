@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="filterbar" method="get">
+  <label>Collection
+    <select name="collection">
+      {% for item in viewmodel.available_collections %}
+      <option value="{{ item }}" {{ 'selected' if item == collection else '' }}>{{ item }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Minimum score
+    <input name="minimum_score" type="number" min="0" max="1" step="0.05" value="{{ minimum_score }}">
+  </label>
+  <button type="submit"><i data-lucide="list-filter"></i>Apply</button>
+  <a class="button-secondary" href="/api/signals?collection={{ collection }}">Export JSON</a>
+</form>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Market Heat</h2><p>Current ranked setups · model output · no automatic execution</p></div>
+    <span class="status-tag persistent">20 assets</span>
+  </div>
+  <div class="table-wrap">
+    <table class="heat-table">
+      <thead><tr><th>#</th><th>Symbol</th><th>Class</th><th>Heat</th><th>Model action</th><th>Score</th><th>Timeframes</th><th>Now</th><th>Entry zone</th><th>Stop</th><th>Target 1</th><th>RR</th><th>Weight</th><th>Expires</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.trending %}
+      <tr>
+        <td>{{ row.rank }}</td><td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td>{{ row.classification }}</td>
+        <td><span class="status-tag heat-{{ row.heat|lower }}">{{ row.heat }}</span></td>
+        <td><span class="status-tag action-{{ row.model_action|lower }}">{{ row.model_action|replace('_',' ') }}</span></td>
+        <td>{{ '%.3f'|format(row.opportunity_score) }}</td><td>{{ row.timeframe or '—' }}</td><td>{{ row.current_price or '—' }}</td>
+        <td>{{ row.entry_low or '—' }}{% if row.entry_high %}–{{ row.entry_high }}{% endif %}</td><td>{{ row.stop or '—' }}</td>
+        <td>{{ row.target_1 or '—' }}</td><td>{{ ('%.2fR'|format(row.expected_rr)) if row.expected_rr is not none else '—' }}</td>
+        <td>{{ ('%.1f%%'|format(row.recommended_weight * 100)) if row.recommended_weight is not none else '—' }}</td>
+        <td>{{ ('%.1fh'|format(row.expiry_hours)) if row.expiry_hours is not none else row.freshness }}</td>
+      </tr>
+      {% else %}<tr><td colspan="14" class="empty">No current ranked opportunities.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-header"><div><h2>Decision Contracts</h2><p>Conditional plans with risk, expiry and failure attribution</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Strategy</th><th>Regime</th><th>Risk</th><th>Cluster</th><th>Why</th><th>Failure modes</th><th>Draft state</th></tr></thead><tbody>
+    {% for row in viewmodel.trending[:10] %}<tr>
+      <td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td>{{ row.strategy_id or '—' }}</td><td>{{ row.regime or '—' }} · {{ ('%.0f%%'|format(row.regime_confidence * 100)) if row.regime_confidence is not none else '—' }}</td>
+      <td>{{ '%.3f%%'|format(row.risk_of_equity * 100) }}</td><td>{{ row.factor_cluster }}</td><td>{{ row.why_it_exists|join(', ') or 'No current trigger reason' }}</td><td>{{ row.why_it_can_fail|join(', ') or 'No explicit failure attribution' }}</td><td>{{ row.draft_order.status if row.draft_order else 'WATCH ONLY' }}</td>
+    </tr>{% else %}<tr><td colspan="8" class="empty">No current decision contracts.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% set rotation = viewmodel.rotation_summary %}
+<section class="signal-rotation-strip">
+  <div><span>New</span><strong>{{ rotation.new_count or 0 }}</strong></div>
+  <div><span>Refreshed</span><strong>{{ rotation.refreshed_count or 0 }}</strong></div>
+  <div><span>Updated</span><strong>{{ rotation.updated_count or 0 }}</strong></div>
+  <div><span>Persistent</span><strong>{{ rotation.persistent_count or 0 }}</strong></div>
+  <div><span>Removed</span><strong>{{ rotation.removed_symbols|length if rotation.removed_symbols else 0 }}</strong></div>
+  <div><span>Expired blocked</span><strong>{{ viewmodel.expired_or_invalid_signal_count }}</strong></div>
+</section>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>{{ collection|title }}</h2><p>{{ viewmodel.count }} current signals · authority NONE</p></div>
+  </div>
+  {% include "partials/signal_table.html" %}
+</section>
+{% set exits = viewmodel.exit_monitor %}
+<div class="split-layout equal">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Sell & Exit Monitor</h2><p>{{ exits.exit_signal_count }} exits · {{ exits.observed_position_count }} broker positions observed</p></div><span class="status-tag {{ 'actionable' if exits.exit_signal_count else 'persistent' }}">{{ 'EXIT REVIEW' if exits.exit_signal_count else 'NO EXIT' }}</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Action</th><th>Source</th><th>Data</th><th>Current R</th><th>Reasons</th><th>Order state</th></tr></thead><tbody>
+      {% for row in exits.exit_signals %}<tr><td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td class="negative">{{ row.model_action|replace('_',' ') }}</td><td>{{ row.source|replace('_',' ') }}</td><td>{{ row.market_data_status or '—' }}{% if row.market_data_age_minutes is not none %} · {{ row.market_data_age_minutes }}m{% endif %}</td><td>{{ ('%.2fR'|format(row.current_r)) if row.current_r is defined and row.current_r is not none else '—' }}</td><td>{{ row.reason_codes|join(', ') if row.reason_codes else row.market_data_reason or 'Lifecycle transition' }}</td><td>{{ row.sell_order_status }}</td></tr>
+      {% else %}<tr><td colspan="7" class="empty">No position-linked exit transition is currently proven.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Risk-off Watch</h2><p>{{ exits.avoid_signal_count }} avoid states · not short orders</p></div></div>
+    <div class="tag-list">
+      {% for row in exits.avoid_signals %}<a href="/asset/{{ row.symbol }}"><strong>{{ row.symbol }}</strong><span>AVOID NEW LONG</span></a>{% else %}<div class="empty">No avoid states.</div>{% endfor %}
+    </div>
+  </section>
+</div>
+<section class="panel chart-panel">
+  <div class="panel-header">
+    <div><h2 id="chart-title">Price Structure</h2><p>Click a symbol to load cached bars</p></div>
+    <div class="segmented" id="chart-intervals">
+      {% for interval in ['1h','2h','4h','1d','1w','1mo'] %}
+      <button type="button" data-interval="{{ interval }}" class="{{ 'active' if interval == '1d' else '' }}">{{ interval }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div id="price-chart" class="chart-empty">Select a signal symbol</div>
+</section>
+{% endblock %}

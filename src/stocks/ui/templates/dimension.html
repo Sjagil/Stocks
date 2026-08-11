@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+{% if dimension == 'region' %}
+<section class="panel">
+  <div class="panel-header"><div><h2>Global Exchange Clock</h2><p>Official exchange calendars · local clocks · refreshes every minute</p></div><span id="exchange-status-summary" class="status-tag persistent">{{ viewmodel.exchange_open_count }} open · {{ viewmodel.exchange_closed_count }} closed</span></div>
+  <div id="exchange-map" data-exchanges='{{ viewmodel.exchange_clock|tojson }}'></div>
+  <div class="exchange-clock-grid">
+    {% for exchange in viewmodel.exchange_clock %}
+    <article class="exchange-card {{ exchange.status|lower }}" data-exchange="{{ exchange.name }}" data-timezone="{{ exchange.timezone }}">
+      <header><strong>{{ exchange.name }}</strong><span class="exchange-status">{{ exchange.status }}</span></header>
+      <time class="exchange-local-time">{{ exchange.local_time }}</time>
+      <small class="exchange-next-event">{{ exchange.country }} · {{ exchange.next_event_type or '—' }} {{ exchange.next_event_local or '—' }}</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>{{ dimension|title }} Ranking</h2><p>{{ viewmodel.count }} groups ranked on current opportunity evidence</p></div>
+  </div>
+  <div class="heat-grid">
+    {% for row in viewmodel.rankings[:60] %}
+    <article style="--heat: {{ row.maximum_opportunity_score }}">
+      <span>#{{ row.rank }} {{ row[dimension] }}</span>
+      <strong>{{ '%.3f'|format(row.maximum_opportunity_score) }}</strong>
+      <small>{{ row.instrument_count }} instruments · {{ row.signal_count }} signals</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

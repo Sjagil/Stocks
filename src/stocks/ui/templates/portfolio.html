@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="alert warning"><i data-lucide="shield"></i><div><strong>Approved allocation remains cash</strong><span>Research allocation and broker observation do not grant execution authority.</span></div></div>
+{% set broker = viewmodel.broker_state %}
+<div class="alert {{ 'info' if broker.status == 'BROKER_COUNTS_ALIGNED' else 'danger' }}"><i data-lucide="scan-search"></i><div><strong>{{ broker.status|replace('_',' ') }}</strong><span>{{ broker.environment|replace('_',' ') }} · {{ broker.observed_position_count if broker.observed_position_count is not none else 'positions unavailable' }}{% if broker.observed_position_count is not none %} observed positions{% endif %} · {{ broker.observed_open_order_count if broker.observed_open_order_count is not none else 'orders unavailable' }}{% if broker.observed_open_order_count is not none %} open orders{% endif %} · reconciliation {{ broker.reconciliation_status|replace('_',' ') }}</span></div></div>
+<div class="metric-grid compact">
+  {% set status = viewmodel.status %}
+  {% set exp = viewmodel.exposures %}
+  {% for label, value, sub in [
+    ('Positions observed', broker.observed_position_count if broker.observed_position_count is not none else 'Unavailable', broker.status),
+    ('Opportunities', status.opportunity_count, status.allocatable_opportunity_count ~ ' allocatable'),
+    ('Approved exposure', '%.1f%%'|format(exp.approved_gross_exposure * 100), 'authority NONE'),
+    ('Research exposure', '%.1f%%'|format(exp.research_gross_exposure * 100), 'whole-share shadow'),
+    ('Security netting', 'BLOCKED' if status.security_netting_status == 'DATA_BLOCKED' else status.security_netting_status, 'global'),
+    ('Orders generated', status.orders_generated, 'automatic false')
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong class="{{ 'compact-value' if value|string|length > 14 else '' }}">{{ value }}</strong><small>{{ sub }}</small></article>
+  {% endfor %}
+</div>
+{% set cf = viewmodel.confluence %}
+<section class="panel">
+  <div class="panel-header"><div><h2>Technical · Fundamental · Macro Confluence</h2><p>Weighted geometric confirmation · technical setup required · context has no standalone authority</p></div><span class="status-tag {{ 'actionable' if cf.status == 'GO' else 'persistent' }}">{{ cf.status|replace('_', ' ') }}</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Asset</th><th>Confluence</th><th>Technical</th><th>Fundamental</th><th>Macro</th><th>Base</th><th>Final</th><th>Delta</th><th>Gate</th></tr></thead><tbody>
+    {% for row in cf.get('rows', []) %}<tr>
+      <td><a class="symbol-link" href="/asset/{{ row.ticker }}">{{ row.ticker }}</a></td>
+      <td>{{ row.status|replace('_', ' ') }}<br><small>{{ ('%.1f%%'|format(row.confluence_score * 100)) if row.confluence_score is not none else 'Unavailable' }}</small></td>
+      <td>{{ row.layer_statuses.get('technical', 'UNAVAILABLE')|replace('_', ' ') }}</td>
+      <td>{{ row.layer_statuses.get('fundamental', 'UNAVAILABLE')|replace('_', ' ') }}</td>
+      <td>{{ row.layer_statuses.get('macro', 'UNAVAILABLE')|replace('_', ' ') }}<br><small>{{ row.macro_source|replace('_', ' ') }}</small></td>
+      <td>{{ ('%.3f'|format(row.base_score_without_confluence)) if row.base_score_without_confluence is not none else '—' }}</td>
+      <td>{{ ('%.3f'|format(row.final_opportunity_score)) if row.final_opportunity_score is not none else '—' }}</td>
+      <td>{{ ('%+.3f'|format(row.score_delta)) if row.score_delta is not none else '—' }}</td>
+      <td>{{ 'ALLOWED' if row.allocation_allowed else row.allocation_blockers|join(', ') }}</td>
+    </tr>{% else %}<tr><td colspan="9" class="empty">No current technical setup reached the confluence ranking.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% set dr = viewmodel.dynamic_risk %}
+{% set lg = dr.get('loss_guard', {}) %}
+<section class="panel">
+  <div class="panel-header"><div><h2>Dynamic Risk State</h2><p>Capital, regime, drawdown, recovery and signal-scarcity controls</p></div></div>
+  <div class="definition-grid">
+    <div><span>Capital tier</span><strong>{{ dr.equity_band|replace('_', ' ') }}</strong></div>
+    <div><span>Dynamic research positions</span><strong>{{ dr.dynamic_research_maximum_positions }} / {{ dr.tier_maximum_positions }}</strong></div>
+    <div><span>Operational positions</span><strong>{{ dr.operational_maximum_positions }}</strong></div>
+    <div><span>Regime confidence</span><strong>{{ ('%.1f%%'|format(dr.regime_confidence * 100)) if dr.regime_confidence is not none else 'Unavailable' }}</strong></div>
+    <div><span>Signal quality</span><strong>{{ ('%.1f%%'|format(dr.signal_quality * 100)) if dr.signal_quality is not none else 'Unavailable' }}</strong></div>
+    <div><span>Diversification</span><strong>{{ ('%.1f%%'|format(dr.diversification_score * 100)) if dr.diversification_score is not none else 'Unavailable' }}</strong></div>
+    <div><span>Portfolio drawdown</span><strong>{{ ('%.2f%%'|format(dr.portfolio_drawdown_pct * 100)) if dr.portfolio_drawdown_pct is not none else dr.portfolio_drawdown_status|replace('_', ' ') }}</strong></div>
+    <div><span>Drawdown velocity</span><strong>{{ ('%.3f%% / day'|format(dr.drawdown_velocity_per_day * 100)) if dr.drawdown_velocity_per_day is not none else dr.drawdown_velocity_status|replace('_', ' ') }}</strong></div>
+    <div><span>Recovery</span><strong>{{ ('%.1f%%'|format(dr.recovery_ratio * 100)) if dr.recovery_ratio is not none else dr.recovery_status|replace('_', ' ') }}</strong></div>
+    <div><span>Consecutive losses</span><strong>{{ dr.consecutive_loss_sessions }} · {{ dr.loss_streak_status|replace('_', ' ') }}</strong></div>
+    <div><span>Daily loss guard</span><strong>{{ lg.get('status', 'UNAVAILABLE')|replace('_', ' ') }} · {{ 'entries allowed' if dr.get('new_entries_allowed', false) else 'new entries blocked' }}</strong></div>
+    <div><span>Rolling week</span><strong>{{ ('%.2f%%'|format(lg.get('rolling_week_loss_ratio') * 100)) if lg.get('rolling_week_loss_ratio') is not none else 'insufficient history' }}</strong></div>
+    <div><span>Rolling month</span><strong>{{ ('%.2f%%'|format(lg.get('rolling_month_loss_ratio') * 100)) if lg.get('rolling_month_loss_ratio') is not none else 'insufficient history' }}</strong></div>
+    <div><span>Combined risk multiplier</span><strong>{{ ('%.1f%%'|format(dr.multipliers.combined * 100)) if dr.multipliers.combined is not none else 'Unavailable' }}</strong></div>
+    <div><span>Data quality multiplier</span><strong>{{ ('%.1f%%'|format(dr.multipliers.data_quality * 100)) if dr.multipliers.data_quality is not none else 'Unavailable' }}</strong></div>
+  </div>
+</section>
+{% set positions = viewmodel.position_overview %}
+<section class="panel">
+  <div class="panel-header"><div><h2>Observed Broker Positions</h2><p>Local private values · strategy ownership is never inferred · authority NONE</p></div><span class="status-tag {{ 'actionable' if positions.status == 'GO' else 'persistent' }}">{{ positions.status|replace('_', ' ') }}</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Ticker</th><th>Asset class</th><th>Strategy</th><th>Quantity</th><th>Entry</th><th>Current</th><th>Stop</th><th>Current R</th><th>Peak R</th><th>Giveback</th><th>Weight</th><th>Risk contribution</th><th>Factor cluster</th><th>Status</th></tr></thead><tbody>
+  {% for row in positions.positions %}<tr>
+    <td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td>
+    <td>{{ row.asset_class|replace('_', ' ') }}</td>
+    <td>{{ row.strategy|replace('_', ' ') }}</td>
+    <td>{{ row.quantity if row.quantity is not none else '—' }}</td>
+    <td>{{ ('%.4f'|format(row.entry_price)) if row.entry_price is not none else '—' }}</td>
+    <td>{{ ('%.4f'|format(row.current_price)) if row.current_price is not none else '—' }}</td>
+    <td>{{ ('%.4f'|format(row.stop)) if row.stop is not none else '—' }}</td>
+    <td>{{ ('%.2fR'|format(row.current_r)) if row.current_r is not none else '—' }}</td>
+    <td>{{ ('%.2fR'|format(row.peak_r)) if row.peak_r is not none else '—' }}</td>
+    <td>{{ ('%.1f%%'|format(row.profit_giveback * 100)) if row.profit_giveback is not none else '—' }}</td>
+    <td>{{ ('%.2f%%'|format(row.position_weight * 100)) if row.position_weight is not none else '—' }}</td>
+    <td>{{ ('%.2f%%'|format(row.risk_contribution * 100)) if row.risk_contribution is not none else '—' }}</td>
+    <td>{{ row.factor_cluster }}</td>
+    <td>{{ row.advisory_action|replace('_', ' ') }} · {{ row.data_status|replace('_', ' ') }}</td>
+  </tr>{% else %}<tr><td colspan="14" class="empty">{{ 'Broker positions are unavailable until current reconciliation succeeds.' if broker.reconciliation != 'GO' else 'No reconciled broker positions are currently open.' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel">
+  <div class="panel-header"><div><h2>Position Management</h2><p>R-multiple lifecycle, profit protection and trailing-stop advice · no automatic execution</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Asset</th><th>Advisory action</th><th>Current R</th><th>Peak R</th><th>Giveback</th><th>Trailing</th><th>Reasons</th></tr></thead><tbody>
+  {% for row in viewmodel.position_management.get('positions', []) %}<tr>
+    <td><a class="symbol-link" href="/asset/{{ row.ticker }}">{{ row.ticker }}</a></td>
+    <td>{{ row.advisory_action|replace('_',' ') }}</td>
+    <td>{{ ('%.2fR'|format(row.current_r)) if row.current_r is not none else '—' }}</td>
+    <td>{{ ('%.2fR'|format(row.peak_r)) if row.peak_r is not none else '—' }}</td>
+    <td>{{ ('%.1f%%'|format(row.profit_giveback * 100)) if row.profit_giveback is not none else '—' }}</td>
+    <td>{{ 'Active' if row.trailing_active else 'Inactive' }}</td>
+    <td>{{ row.reason_codes|join(', ') }}</td>
+  </tr>{% else %}<tr><td colspan="7" class="empty">No open broker position requires lifecycle advice.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel">
+  <div class="panel-header"><div><h2>Proactive Allocation Queue</h2><p>Whole-portfolio candidates · advisory until broker mirror and authority are valid</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Symbol</th><th>Action</th><th>Score</th><th>Target weight</th><th>Quantity</th><th>Limit</th><th>Stop</th><th>Target 1</th><th>Status</th></tr></thead><tbody>
+  {% for row in viewmodel.proactive_queue %}<tr>
+    <td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td>{{ row.action|replace('_',' ') }}</td><td>{{ '%.3f'|format(row.score) }}</td>
+    <td>{{ ('%.1f%%'|format(row.target_weight * 100)) if row.target_weight is not none else '—' }}</td><td>{{ row.draft_order.quantity or '—' }}</td><td>{{ row.draft_order.limit_price or '—' }}</td><td>{{ row.draft_order.protective_stop or '—' }}</td><td>{{ row.draft_order.target_1 or '—' }}</td><td>{{ row.status }}</td>
+  </tr>{% else %}<tr><td colspan="9" class="empty">No current portfolio candidate passed the research allocation gate.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<div class="split-layout equal">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Operator Handover</h2><p>Read-only readiness checks</p></div><a class="button-secondary" href="/api/portfolio">Export JSON</a></div>
+    <ul class="check-list">
+      {% for row in viewmodel.handover_checks %}<li class="{{ 'go' if row.go else 'blocked' }}"><i data-lucide="{{ 'check-circle-2' if row.go else 'circle-x' }}"></i><span>{{ row.label }}</span><strong>{{ 'GO' if row.go else 'BLOCKED' }}</strong></li>{% endfor %}
+    </ul>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Portfolio Risk</h2><p>Current advisory target</p></div><a class="text-link" href="/performance">Open P&L calendar <i data-lucide="arrow-right"></i></a></div>
+    {% set target_exposure = viewmodel.risk_contributions.get('research_target_exposure') %}
+    {% set cash_reserve = viewmodel.exposures.get('research_cash_weight') %}
+    {% set annual_volatility = viewmodel.risk_contributions.get('estimated_annualized_volatility') %}
+    {% set portfolio_heat = viewmodel.risk_contributions.get('research_portfolio_heat') %}
+    {% set maximum_correlation = viewmodel.risk_contributions.get('maximum_pairwise_correlation') %}
+    <dl class="key-values">
+      <div><dt>Target exposure</dt><dd>{{ ('%.1f%%'|format(target_exposure * 100)) if target_exposure is not none else 'Unavailable' }}</dd></div>
+      <div><dt>Cash reserve</dt><dd>{{ ('%.1f%%'|format(cash_reserve * 100)) if cash_reserve is not none else 'Unavailable' }}</dd></div>
+      <div><dt>Estimated annual volatility</dt><dd>{{ ('%.2f%%'|format(annual_volatility * 100)) if annual_volatility is not none else 'Unavailable' }}</dd></div>
+      <div><dt>Portfolio heat</dt><dd>{{ ('%.2f%%'|format(portfolio_heat * 100)) if portfolio_heat is not none else 'Unavailable' }}</dd></div>
+      <div><dt>Maximum correlation</dt><dd>{{ ('%.3f'|format(maximum_correlation)) if maximum_correlation is not none else 'Unavailable' }}</dd></div>
+    </dl>
+  </section>
+</div>
+<div class="split-layout equal">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Research Target Allocation</h2><p>Advisory, globally netted, no orders</p></div></div>
+    <div class="allocation-bars">
+      {% for row in viewmodel.target_allocation.allocations %}
+      <a href="/asset/{{ row.ticker }}" class="allocation-row">
+        <span>{{ row.ticker }}<small>{{ row.sleeve }} · {{ row.region }}</small></span>
+        <div class="bar-track"><i style="--bar: {{ row.research_target_weight }}"></i></div>
+        <strong>{{ '%.1f%%'|format(row.research_target_weight * 100) }}</strong>
+      </a>
+      {% else %}<div class="empty">No research target allocations.</div>{% endfor %}
+      {% set research_cash = viewmodel.exposures.get('research_cash_weight', 1.0) %}
+      <div class="allocation-row cash-row">
+        <span>Cash<small>approved allocation remains 100% cash</small></span>
+        <div class="bar-track"><i style="--bar: {{ research_cash }}"></i></div>
+        <strong>{{ '%.1f%%'|format(research_cash * 100) }}</strong>
+      </div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Correlation Control</h2><p>Seaborn snapshot of current research opportunity set</p></div></div>
+    <img class="stat-image" src="/analytics/portfolio-correlation.png" alt="Portfolio correlation heatmap">
+  </section>
+</div>
+<section class="panel">
+  <div class="panel-header"><div><h2>Rotation & Rebalance Preview</h2><p>{{ viewmodel.rebalance_plan.status }} · executable action remains NO_ACTION</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Asset</th><th>Advisory action</th><th>Executable</th><th>Score</th><th>Reasons</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.rebalance_plan.actions %}
+      <tr><td><a class="symbol-link" href="/asset/{{ row.ticker }}">{{ row.ticker }}</a></td><td>{{ row.advisory_action }}</td><td>{{ row.executable_action }}</td><td>{{ row.opportunity_score }}</td><td>{{ row.reason_codes|join(', ') }}</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No rebalance actions.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<div class="split-layout equal">
+  {% for title, data in [('Sector exposure', viewmodel.exposures.sector_weights), ('Region exposure', viewmodel.exposures.region_weights), ('Sleeve exposure', viewmodel.exposures.sleeve_weights), ('Capital controls', viewmodel.capital.level_limits)] %}
+  <section class="panel">
+    <div class="panel-header"><div><h2>{{ title }}</h2></div></div>
+    <dl class="key-values">{% for key, value in data.items() %}<div><dt>{{ key|replace('_',' ') }}</dt><dd>{{ value }}</dd></div>{% endfor %}</dl>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,184 @@
+{
+  "schema": "daily_screener_manual_shariah_attestations_v1",
+  "description": "Manually reviewed, expiring attestations only. Empty means fail closed.",
+  "attestations": [
+    {
+      "symbol": "AAPL",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-07-26T18:10:00Z",
+      "expires_at": "2026-08-25T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/A3LHSN.BE/",
+        "https://muslimxchange.com/ticker/aapl-apple-inc/"
+      ],
+      "notes": "Observed on 2026-07-26. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "NVDA",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-07-26T18:10:00Z",
+      "expires_at": "2026-08-25T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/NVDA/",
+        "https://muslimxchange.com/ticker/nvda-nvidia-corp/"
+      ],
+      "notes": "Observed on 2026-07-26. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "ON",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-08T20:30:00Z",
+      "expires_at": "2026-09-07T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/ON/",
+        "https://muslimxchange.com/ticker/on-on-semiconductor-corp/"
+      ],
+      "notes": "Musaffa classified ON halal for August 2026; Muslim Xchange classified ON Shariah compliant as of 2026-06-19. Reviewed 2026-08-08. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "CSCO",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/CSCO/",
+        "https://muslimxchange.com/ticker/csco-cisco-systems-inc/"
+      ],
+      "notes": "Musaffa classified CSCO halal for August 2026; Muslim Xchange classified CSCO Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "TXN",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/TXN/",
+        "https://muslimxchange.com/ticker/txn-texas-instruments-inc/"
+      ],
+      "notes": "Musaffa classified TXN halal for August 2026; Muslim Xchange classified TXN Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "CSX",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/CSX/",
+        "https://muslimxchange.com/ticker/csx-csx-corp/"
+      ],
+      "notes": "Musaffa classified CSX halal for August 2026; Muslim Xchange classified CSX Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "APH",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/APH/",
+        "https://muslimxchange.com/ticker/aph/"
+      ],
+      "notes": "Musaffa classified APH halal for August 2026; Muslim Xchange classified APH Shariah compliant as of 2026-04-15. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "ANET",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/ANET/",
+        "https://muslimxchange.com/ticker/anet-arista-networks-inc/"
+      ],
+      "notes": "Musaffa classified ANET halal for August 2026; Muslim Xchange classified ANET Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "AMAT",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/AMAT/",
+        "https://muslimxchange.com/ticker/amat-applied-materials-inc/"
+      ],
+      "notes": "Musaffa classified AMAT halal for August 2026; Muslim Xchange classified AMAT Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "LRCX",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:15:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "AAOIFI_EXTERNAL_DUAL_SOURCE_CORROBORATION",
+      "source": "MUSAFFA_AND_MUSLIM_XCHANGE",
+      "evidence": [
+        "https://musaffa.com/stock/LRCX/",
+        "https://muslimxchange.com/ticker/lrcx-lam-research-corp/"
+      ],
+      "notes": "Musaffa classified LRCX halal for August 2026; Muslim Xchange classified LRCX Shariah compliant as of 2026-06-19. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "SPUS",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:42:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "OFFICIAL_FUND_SHARIAH_CERTIFICATION",
+      "source": "OFFICIAL_FUND_PROVIDER",
+      "evidence": [
+        "https://www.sp-funds.com/SPUS/"
+      ],
+      "notes": "Official SP Funds material describes SPUS as an AAOIFI-compliant Shariah equity ETF. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "SPSK",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:42:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "OFFICIAL_FUND_SHARIAH_CERTIFICATION",
+      "source": "OFFICIAL_FUND_PROVIDER",
+      "evidence": [
+        "https://www.sp-funds.com/SPSK/"
+      ],
+      "notes": "Official SP Funds material describes SPSK as an AAOIFI-aligned global sukuk ETF. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "HLAL",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:42:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "OFFICIAL_FUND_SHARIAH_CERTIFICATION",
+      "source": "OFFICIAL_FUND_PROVIDER",
+      "evidence": [
+        "https://www.wahed.com/hlal"
+      ],
+      "notes": "Official Wahed material identifies HLAL as a Shariah-compliant US equity ETF with current certification material. Observed 2026-08-09. No retroactive eligibility before observation time."
+    },
+    {
+      "symbol": "UMMA",
+      "status": "SHARIAH_ELIGIBLE_PIT",
+      "screened_at": "2026-08-09T12:42:00Z",
+      "expires_at": "2026-09-08T23:59:59Z",
+      "methodology": "OFFICIAL_FUND_SHARIAH_CERTIFICATION",
+      "source": "OFFICIAL_FUND_PROVIDER",
+      "evidence": [
+        "https://www.wahed.com/umma"
+      ],
+      "notes": "Official Wahed material identifies UMMA as a Shariah-compliant international equity ETF with current certification material. Observed 2026-08-09. No retroactive eligibility before observation time."
+    }
+  ]
+}

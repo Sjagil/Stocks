@@ -1,0 +1,9 @@
+# Phase 11.1 Status
+
+status: PHASE11_1_ORTHOGONAL_PIT_DATA_AND_ALPHA_STRATEGY_FOUNDATION_GO
+foundation_status: FOUNDATION_ONLY_NO_PROVIDER_ALPHA_EVIDENCE
+financial_decision: NO_NEW_FINANCIAL_CANDIDATE
+fixture_decision_count: 12
+execution_authority: NONE
+strategy_authority: NONE
+provider_data_status: NOT_COLLECTED_OFFLINE_FOUNDATION

@@ -1,0 +1,32 @@
+{
+  "schema": "ibkr_forced_disconnect_drill_v1",
+  "generated_at": "2026-07-20T00:00:00Z",
+  "status": "GO",
+  "host": "127.0.0.1",
+  "port": 7497,
+  "client_id": 17,
+  "seconds": 180.0,
+  "poll_seconds": 2.0,
+  "disconnect_observed": true,
+  "reconnect_successful": true,
+  "failure_reason": null,
+  "observed_statuses": [
+    {
+      "phase": "start",
+      "status": "HEALTHY"
+    },
+    {
+      "phase": "heartbeat",
+      "status": "DISCONNECTED"
+    },
+    {
+      "phase": "reconnect",
+      "status": "HEALTHY"
+    }
+  ],
+  "financial_calls": {
+    "place_order": 0,
+    "cancel_order": 0,
+    "global_cancel": 0
+  }
+}

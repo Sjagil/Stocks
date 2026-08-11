@@ -1,0 +1,79 @@
+{
+  "schema": "frontier_technology_energy_theme_manifest_v1",
+  "version": "2026-08-08.2",
+  "research_only": true,
+  "standalone_entry_allowed": false,
+  "automatic_execution_authority": "NONE",
+  "required_timeframes": ["1h", "4h", "1d", "1w", "1mo"],
+  "themes": {
+    "quantum_computing": {
+      "label": "Quantum computing",
+      "macro_sensitivities": [
+        "REAL_YIELDS",
+        "LIQUIDITY",
+        "GROWTH_EXPECTATIONS",
+        "TECH_RISK_APPETITE"
+      ],
+      "official_context_sources": [
+        {"name": "IonQ newsroom", "url": "https://www.ionq.com/news", "scope": "IONQ_COMPANY_RESULTS_AND_EVENTS"},
+        {"name": "D-Wave investor relations", "url": "https://ir.dwavequantum.com/", "scope": "QBTS_COMPANY_RESULTS_AND_EVENTS"},
+        {"name": "Rigetti investor relations", "url": "https://investors.rigetti.com/", "feed_url": "https://investors.rigetti.com/rss/news-releases.xml", "symbols": ["RGTI"], "scope": "RGTI_COMPANY_RESULTS_AND_EVENTS"},
+        {"name": "Microsoft Azure Quantum Blog", "url": "https://azure.microsoft.com/en-us/blog/quantum/", "feed_url": "https://azure.microsoft.com/en-us/blog/quantum/feed/", "symbols": ["MSFT"], "scope": "MSFT_QUANTUM_PLATFORM_RESEARCH_AND_PRODUCT_EVENTS"},
+        {"name": "NVIDIA accelerated quantum computing", "url": "https://www.nvidia.com/en-us/solutions/quantum-computing/", "scope": "NVDA_QUANTUM_CLASSICAL_PLATFORM_AND_INFRASTRUCTURE"},
+        {"name": "SEC EDGAR", "url": "https://www.sec.gov/edgar/search/", "scope": "US_ISSUER_FILINGS"}
+      ],
+      "instruments": [
+        {"symbol": "IONQ", "subtheme": "pure_play", "business_maturity": "COMMERCIALIZING_HIGH_RISK", "news_aliases": ["IONQ"], "ibkr_contract": {"symbol": "IONQ", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "RGTI", "subtheme": "pure_play", "business_maturity": "EARLY_STAGE_HIGH_RISK", "news_aliases": ["RIGETTI", "RGTI"], "ibkr_contract": {"symbol": "RGTI", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "QBTS", "subtheme": "pure_play", "business_maturity": "COMMERCIALIZING_HIGH_RISK", "news_aliases": ["D-WAVE", "DWAVE", "QBTS"], "ibkr_contract": {"symbol": "QBTS", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "QUBT", "subtheme": "pure_play", "business_maturity": "EARLY_STAGE_HIGH_RISK", "news_aliases": ["QUANTUM COMPUTING INC", "QUBT"], "ibkr_contract": {"symbol": "QUBT", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "ARQQ", "subtheme": "quantum_security", "business_maturity": "EARLY_STAGE_HIGH_RISK", "news_aliases": ["ARQIT", "ARQQ"], "ibkr_contract": {"symbol": "ARQQ", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "IBM", "subtheme": "platform_enabler", "business_maturity": "DIVERSIFIED_OPERATIONAL", "news_aliases": ["IBM"], "ibkr_contract": {"symbol": "IBM", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "MSFT", "subtheme": "platform_enabler", "business_maturity": "DIVERSIFIED_OPERATIONAL", "news_aliases": ["MICROSOFT", "MSFT"], "ibkr_contract": {"symbol": "MSFT", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "GOOGL", "subtheme": "platform_enabler", "business_maturity": "DIVERSIFIED_OPERATIONAL", "news_aliases": ["ALPHABET", "GOOGLE", "GOOGL"], "ibkr_contract": {"symbol": "GOOGL", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "NVDA", "subtheme": "platform_enabler", "business_maturity": "DIVERSIFIED_OPERATIONAL", "news_aliases": ["NVIDIA", "NVDA", "CUDA-Q", "CUQUANTUM", "NVQLINK"], "ibkr_contract": {"symbol": "NVDA", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}}
+      ]
+    },
+    "nuclear_uranium": {
+      "label": "Nuclear and uranium",
+      "macro_sensitivities": [
+        "URANIUM_FUEL_CYCLE",
+        "POWER_DEMAND",
+        "REAL_YIELDS",
+        "ENERGY_POLICY",
+        "COMMODITY_RISK_APPETITE"
+      ],
+      "official_context_sources": [
+        {"name": "NRC advanced reactor highlights", "url": "https://www.nrc.gov/reactors/new-reactors/advanced/highlights/2026", "feed_url": "https://www.nrc.gov/public-involve/rss?feed=news", "scope": "LICENSING_AND_PERMITS"},
+        {"name": "NRC advanced reactor pre-application activities", "url": "https://www.nrc.gov/reactors/new-reactors/advanced/who-were-working-with/pre-application-activities", "scope": "PROJECT_PIPELINE"},
+        {"name": "DOE Reactor Pilot Program", "url": "https://www.energy.gov/ne/us-department-energy-reactor-pilot-program", "feed_url": "https://www.energy.gov/rss/ne/2282917", "scope": "DEMONSTRATION_PROGRAM"},
+        {"name": "SEC EDGAR", "url": "https://www.sec.gov/edgar/search/", "scope": "US_ISSUER_FILINGS"}
+      ],
+      "instruments": [
+        {"symbol": "U-UN.TO", "subtheme": "physical_uranium", "business_maturity": "PHYSICAL_VEHICLE", "news_aliases": ["SPROTT PHYSICAL URANIUM", "U.UN"], "ibkr_contract": {"symbol": "U.UN", "asset_class": "commodity_etf", "currency": "CAD", "exchange": "SMART", "primary_exchange": "TSE"}},
+        {"symbol": "URA", "subtheme": "uranium_fund", "business_maturity": "DIVERSIFIED_FUND", "news_aliases": ["GLOBAL X URANIUM", "URA"], "ibkr_contract": {"symbol": "URA", "asset_class": "commodity_etf", "currency": "USD", "exchange": "SMART", "primary_exchange": "ARCA"}},
+        {"symbol": "URNM", "subtheme": "uranium_fund", "business_maturity": "DIVERSIFIED_FUND", "news_aliases": ["SPROTT URANIUM MINERS", "URNM"], "ibkr_contract": {"symbol": "URNM", "asset_class": "commodity_etf", "currency": "USD", "exchange": "SMART", "primary_exchange": "ARCA"}},
+        {"symbol": "URNJ", "subtheme": "uranium_fund", "business_maturity": "JUNIOR_MINER_FUND_HIGH_RISK", "news_aliases": ["SPROTT JUNIOR URANIUM", "URNJ"], "ibkr_contract": {"symbol": "URNJ", "asset_class": "commodity_etf", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "CCJ", "subtheme": "fuel_cycle", "business_maturity": "OPERATIONAL_PRODUCER", "news_aliases": ["CAMECO", "CCJ"], "ibkr_contract": {"symbol": "CCJ", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "UEC", "subtheme": "fuel_cycle", "business_maturity": "DEVELOPMENT_AND_PRODUCTION", "news_aliases": ["URANIUM ENERGY", "UEC"], "ibkr_contract": {"symbol": "UEC", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "AMEX"}},
+        {"symbol": "LEU", "subtheme": "fuel_cycle", "business_maturity": "OPERATIONAL_FUEL_CYCLE", "news_aliases": ["CENTRUS", "LEU"], "ibkr_contract": {"symbol": "LEU", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "NXE", "subtheme": "fuel_cycle", "business_maturity": "DEVELOPMENT_STAGE_HIGH_RISK", "news_aliases": ["NEXGEN", "NXE"], "ibkr_contract": {"symbol": "NXE", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "DNN", "subtheme": "fuel_cycle", "business_maturity": "DEVELOPMENT_STAGE_HIGH_RISK", "news_aliases": ["DENISON", "DNN"], "ibkr_contract": {"symbol": "DNN", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "AMEX"}},
+        {"symbol": "OKLO", "subtheme": "advanced_reactor", "business_maturity": "PRE_REVENUE_REGULATORY_HIGH_RISK", "news_aliases": ["OKLO"], "ibkr_contract": {"symbol": "OKLO", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "SMR", "subtheme": "advanced_reactor", "business_maturity": "PRE_REVENUE_REGULATORY_HIGH_RISK", "news_aliases": ["NUSCALE", "SMR"], "ibkr_contract": {"symbol": "SMR", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "NNE", "subtheme": "advanced_reactor", "business_maturity": "PRE_REVENUE_REGULATORY_HIGH_RISK", "news_aliases": ["NANO NUCLEAR", "NNE"], "ibkr_contract": {"symbol": "NNE", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "BWXT", "subtheme": "nuclear_supply_chain", "business_maturity": "OPERATIONAL_DIVERSIFIED", "news_aliases": ["BWX TECHNOLOGIES", "BWXT"], "ibkr_contract": {"symbol": "BWXT", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}},
+        {"symbol": "CEG", "subtheme": "nuclear_power", "business_maturity": "OPERATIONAL_UTILITY", "news_aliases": ["CONSTELLATION ENERGY", "CEG"], "ibkr_contract": {"symbol": "CEG", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NASDAQ"}},
+        {"symbol": "VST", "subtheme": "nuclear_power", "business_maturity": "OPERATIONAL_UTILITY", "news_aliases": ["VISTRA", "VST"], "ibkr_contract": {"symbol": "VST", "asset_class": "stock", "currency": "USD", "exchange": "SMART", "primary_exchange": "NYSE"}}
+      ]
+    }
+  },
+  "authority_contract": {
+    "technical_analysis": "RANKING_CONTEXT_ONLY",
+    "news": "RANKING_CONTEXT_ONLY",
+    "fundamentals": "REQUIRED_FOR_COMPANY_CONVICTION_NOT_STANDALONE_ENTRY",
+    "macro": "CONTEXT_ONLY",
+    "shariah": "UNKNOWN_UNTIL_CURRENT_PROJECT_GATE_PROVES_ELIGIBILITY",
+    "order_generation": false
+  }
+}

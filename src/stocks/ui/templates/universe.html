@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="filterbar" method="get">
+  <label class="search-field">Search
+    <input name="query" value="{{ request.query_params.get('query', '') }}" placeholder="Symbol or company">
+  </label>
+  <label>Type
+    <select name="instrument_type"><option value="">All</option>
+      {% for value in viewmodel.filters.instrument_types %}<option>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Sector
+    <select name="sector"><option value="">All</option>
+      {% for value in viewmodel.filters.sectors %}<option>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Region
+    <select name="region"><option value="">All</option>
+      {% for value in viewmodel.filters.regions %}<option>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit"><i data-lucide="search"></i>Filter</button>
+  <a class="button-secondary" href="/api/universe">Export JSON</a>
+</form>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Instrument Registry</h2><p>{{ "{:,}".format(viewmodel.count) }} results · page {{ viewmodel.page }} of {{ viewmodel.page_count }}</p></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Symbol</th><th>Name</th><th>Type</th><th>Sector</th><th>Industry</th><th>Region</th><th>Exposure</th><th>Eligibility</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.instruments %}
+      <tr>
+        <td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td>{{ row.name }}</td><td>{{ row.instrument_type }}</td>
+        <td>{{ row.sector }}</td><td>{{ row.industry }}</td><td>{{ row.region }}</td>
+        <td>{{ row.exposure_type }}</td><td><span class="status-tag">{{ row.eligibility_status }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination">
+    {% if viewmodel.page > 1 %}<a href="?page={{ viewmodel.page - 1 }}">Previous</a>{% endif %}
+    <span>{{ viewmodel.page }} / {{ viewmodel.page_count }}</span>
+    {% if viewmodel.page < viewmodel.page_count %}<a href="?page={{ viewmodel.page + 1 }}">Next</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

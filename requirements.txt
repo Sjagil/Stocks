@@ -1,0 +1,72 @@
+# Python 3.12 x64 aanbevolen.
+# De officiële IBKR Native Python API (ibapi) wordt apart geïnstalleerd
+# vanuit de officiële TWS API-distributie. Zie install_ibkr_windows.ps1.
+#
+# Geen ib_insync/ib_async in de kern. We bouwen rechtstreeks op de
+# officiële IBKR callback-API en plaatsen daar onze eigen veilige adapter omheen.
+
+# ---------- Core numerics en tabulaire data ----------
+numpy>=2.1,<3
+pandas>=2.2,<3
+scipy>=1.14,<2
+pyarrow>=18,<24
+duckdb>=1.1,<2
+xlrd>=2.0.1,<3
+
+# ---------- Configuratie, schema's en serialisatie ----------
+pydantic>=2.9,<3
+pydantic-settings>=2.5,<3
+python-dotenv>=1.0,<2
+PyYAML>=6.0,<7
+orjson>=3.10,<4
+typing-extensions>=4.12,<5
+
+# ---------- HTTP, retries en tijd ----------
+httpx>=0.27,<1
+websockets>=14,<17
+tenacity>=9,<10
+tzdata>=2025.1
+exchange-calendars>=4.7,<5
+holidays>=0.60,<1
+APScheduler>=3.10,<4
+
+# ---------- Opslag, locking en datavalidatie ----------
+SQLAlchemy>=2.0,<3
+alembic>=1.13,<2
+filelock>=3.16,<4
+pandera>=0.22,<1
+xxhash>=3.5,<4
+
+# ---------- Logging, monitoring en procescontrole ----------
+structlog>=24.4,<26
+rich>=13.9,<15
+psutil>=6.1,<8
+prometheus-client>=0.21,<1
+
+# ---------- Quant research en risicomodellen ----------
+yfinance>=1.0,<2
+statsmodels>=0.14,<1
+arch>=7.2,<8
+scikit-learn>=1.5,<2
+optuna>=4.1,<5
+joblib>=1.4,<2
+numba>=0.60,<1
+cvxpy>=1.6,<2
+networkx>=3.4,<4
+
+# ---------- Rapportage en visualisatie ----------
+matplotlib>=3.9,<4
+plotly>=5.24,<7
+seaborn>=0.13,<1
+fastapi>=0.115,<1
+uvicorn>=0.32,<1
+Jinja2>=3.1,<4
+
+# ---------- Testen en codekwaliteit ----------
+pytest>=8.3,<9
+pytest-cov>=6,<8
+pytest-asyncio>=0.24,<2
+hypothesis>=6.120,<7
+ruff>=0.9,<1
+mypy>=1.14,<2
+types-PyYAML>=6.0,<7

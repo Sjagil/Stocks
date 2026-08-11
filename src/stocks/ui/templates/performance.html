@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="toolbar-row">
+  <div class="segmented" aria-label="Performance environment">
+    {% for environment in viewmodel.available_environments %}
+    <a class="{{ 'active' if environment == viewmodel.environment else '' }}" href="/performance?month={{ viewmodel.month }}&environment={{ environment|lower }}">{{ environment }}</a>
+    {% endfor %}
+  </div>
+  <span class="status-tag persistent">{{ viewmodel.environment_separation|replace('_', ' ') }}</span>
+</div>
+<div class="metric-grid compact">
+  {% set summary = viewmodel.summary %}
+  {% for label, value, sub in [
+    ('Observed days', summary.observed_days, viewmodel.environment ~ ' evidence only'),
+    ('Net P&L', '€%.2f'|format(summary.net_pnl_eur), 'observed days only'),
+    ('Winning days', summary.winning_days, 'net positive'),
+    ('Losing days', summary.losing_days, 'net negative'),
+    ('Best day', ('€%.2f'|format(summary.best_day_eur)) if summary.best_day_eur is not none else '—', 'observed'),
+    ('Worst day', ('€%.2f'|format(summary.worst_day_eur)) if summary.worst_day_eur is not none else '—', 'observed')
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong>{{ value }}</strong><small>{{ sub }}</small></article>
+  {% endfor %}
+</div>
+<section class="panel">
+  <div class="panel-header"><div><h2>Period Performance</h2><p>Broker-derived observations · unavailable is not zero · returns exclude unmodelled cash flows</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Period</th><th>Observed days</th><th>Net P&L</th><th>Return</th><th>Wins</th><th>Losses</th><th>Status</th></tr></thead><tbody>
+  {% for row in viewmodel.period_performance %}<tr>
+    <td>{{ row.period|replace('_',' ') }}</td><td>{{ row.observed_days }}</td><td class="{{ 'positive' if row.net_pnl_eur is not none and row.net_pnl_eur > 0 else 'negative' if row.net_pnl_eur is not none and row.net_pnl_eur < 0 else '' }}">{{ ('€%.2f'|format(row.net_pnl_eur)) if row.net_pnl_eur is not none else '—' }}</td>
+    <td>{{ ('%.2f%%'|format(row.return_pct * 100)) if row.return_pct is not none else '—' }}</td><td>{{ row.winning_days }}</td><td>{{ row.losing_days }}</td><td>{{ row.status|replace('_',' ') }}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+</section>
+<section class="panel">
+  <div class="panel-header calendar-header">
+    <a class="icon-button" href="/performance?month={{ viewmodel.previous_month }}&environment={{ viewmodel.environment|lower }}" title="Previous month"><i data-lucide="chevron-left"></i></a>
+    <div><h2>{{ viewmodel.month_label }}</h2><p>{{ viewmodel.environment }} · Europe/Amsterdam · unavailable is not zero</p></div>
+    <a class="icon-button" href="/performance?month={{ viewmodel.next_month }}&environment={{ viewmodel.environment|lower }}" title="Next month"><i data-lucide="chevron-right"></i></a>
+  </div>
+  <div class="pnl-calendar">
+    {% for weekday in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<div class="calendar-weekday">{{ weekday }}</div>{% endfor %}
+    {% for week in viewmodel.weeks %}{% for cell in week %}
+    <article class="calendar-day {{ cell.status|lower }} {{ 'today' if cell.is_today else '' }}">
+      <span>{{ cell.day }}</span>
+      {% if cell.record %}
+      <strong class="{{ 'positive' if cell.record.net_pnl_eur > 0 else 'negative' if cell.record.net_pnl_eur < 0 else '' }}">€{{ '%.2f'|format(cell.record.net_pnl_eur) }}</strong>
+      <small>{{ cell.record.source|replace('_',' ') }}</small>
+      {% elif cell.status == 'NON_TRADING_DAY' %}<small>Market closed</small>
+      {% elif cell.status == 'UNAVAILABLE' %}<small>Unavailable</small>{% endif %}
+    </article>
+    {% endfor %}{% endfor %}
+  </div>
+</section>
+<div class="split-layout equal">
+  <section class="panel"><div class="panel-header"><div><h2>Daily Target</h2><p>Soft risk throttle</p></div></div><dl class="key-values">
+    <div><dt>Session</dt><dd>{{ viewmodel.daily_target.session_date or '—' }}</dd></div>
+    <div><dt>Target</dt><dd>{{ ('€%.2f'|format(viewmodel.daily_target.target_eur)) if viewmodel.daily_target.target_eur is not none else '—' }}</dd></div>
+    <div><dt>Reported input</dt><dd>{{ ('€%.2f'|format(viewmodel.daily_target.reported_pnl_eur)) if viewmodel.daily_target.reported_pnl_eur is not none else '—' }}</dd></div>
+    <div><dt>Source</dt><dd>{{ viewmodel.daily_target.input_source }}</dd></div>
+    <div><dt>Counted as broker P&L</dt><dd>NO</dd></div>
+  </dl></section>
+  <section class="panel"><div class="panel-header"><div><h2>Evidence Status</h2><p>Authority remains NONE</p></div></div><dl class="key-values">
+    <div><dt>Live performance</dt><dd>{{ viewmodel.live_performance_status }}</dd></div>
+    <div><dt>Selected environment</dt><dd>{{ viewmodel.environment }}</dd></div>
+    <div><dt>Execution authority</dt><dd>{{ viewmodel.execution_authority }}</dd></div>
+    <div><dt>Broker calls</dt><dd>{{ viewmodel.broker_calls }}</dd></div>
+  </dl></section>
+</div>
+{% endblock %}

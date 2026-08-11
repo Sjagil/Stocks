@@ -1,0 +1,12 @@
+{
+  "schema": "stocks_walk_forward_contract_v1",
+  "historical_confirmation_status": "CONSUMED_2019_2026",
+  "future_holdout_status": "UNAVAILABLE_UNTIL_FUTURE_FORWARD_DATA",
+  "daily_weekly_monthly": {"minimum_train_months": 60, "validation_months": 12, "outer_test_months": 12, "step_months": 12},
+  "intraday": {"minimum_train_months": 12, "validation_months": 3, "outer_test_months": 3, "step_months": 3},
+  "selection_scope": "INNER_TRAIN_VALIDATION_ONLY",
+  "minimum_folds_where_possible": 5,
+  "gates": {"positive_fold_ratio": 0.60, "median_outer_profit_factor": 1.0, "median_outer_cagr": 0.0, "double_cost_median_profit_factor": 1.0},
+  "catastrophic_fold": {"maximum_drawdown_lte": -0.60, "terminal_nav_loss_gte": 0.70},
+  "authority": {"FINANCIAL_FINALIST_GO": false, "FORWARD_SHADOW_GO": false, "EXECUTION_AUTHORITY": "NONE", "BROKER_CALLS": 0}
+}

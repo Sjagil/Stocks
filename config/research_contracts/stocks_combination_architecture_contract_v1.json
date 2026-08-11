@@ -1,0 +1,14 @@
+{
+  "schema": "stocks_combination_architecture_contract_v1",
+  "architectures": ["CONFIRMATION_VOTING", "GLOBAL_NETTED_SLEEVES", "HIERARCHICAL_FILTERS"],
+  "vote_entry_modes": ["ALL", "MAJORITY", "ANY"],
+  "vote_exit_modes": ["ANY_EXIT", "MAJORITY_EXIT", "ALL_EXIT", "PRIMARY_COMPONENT_EXIT"],
+  "pair_majority_policy": "MAJORITY_EQUALS_ALL_NOT_DUPLICATED",
+  "sleeve_weight_modes": ["EQUAL_WEIGHT", "INVERSE_VOLATILITY", "RISK_PARITY_APPROXIMATION", "FIXED_PRIORITY"],
+  "hierarchical_examples": ["1w->1d", "1d->4h", "1d->1h", "1mo->1w", "1mo->1d"],
+  "higher_timeframe_availability": "LAST_FULLY_CLOSED_BAR_ONLY",
+  "caps": {"max_parameters_per_strategy": 3, "max_parameters_per_family": 2, "pair_products": 100, "triple_products": 500, "quad_products": 1000, "hierarchical_per_pair": 500, "vote_per_combination": 500},
+  "near_duplicate": {"minimum_signal_jaccard": 0.90, "minimum_return_correlation": 0.95},
+  "ledger": "PHASE11_5_GLOBAL_V2_WHOLE_SHARE_NETTED_LEDGER",
+  "authority": {"FINANCIAL_FINALIST_GO": false, "FORWARD_SHADOW_GO": false, "STRATEGY_AUTHORITY": "NONE", "EXECUTION_AUTHORITY": "NONE", "BROKER_CALLS": 0}
+}

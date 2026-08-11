@@ -1,0 +1,295 @@
+{
+  "schema": "ai_reference_patterns_v1",
+  "version": 1,
+  "policy": {
+    "reference_only": true,
+    "copy_source_code": false,
+    "install_frameworks": false,
+    "production_dependency_changes": false,
+    "second_trading_engine": false,
+    "second_broker_writer": false,
+    "money_control": false
+  },
+  "repositories": [
+    {
+      "repo": "rd_agent",
+      "role": "AGENTIC_QUANT_RESEARCH_ORACLE",
+      "inspected_files": [
+        "rdagent/core/experiment.py",
+        "rdagent/components/workflow/rd_loop.py",
+        "rdagent/app/qlib_rd_loop/factor.py"
+      ],
+      "patterns": [
+        "hypothesis-to-experiment contract",
+        "propose-code-run-feedback-record loop",
+        "workspace checkpoint and reproducible feedback trace"
+      ],
+      "native_integration": "controlled hypothesis and immutable experiment contracts",
+      "explicit_exclusions": [
+        "LLM generated code in production runtime",
+        "automatic strategy or live promotion",
+        "broker or capital authority"
+      ]
+    },
+    {
+      "repo": "fingpt",
+      "role": "FINANCIAL_NLP_ORACLE",
+      "inspected_files": [
+        "fingpt/FinGPT_Forecaster/market_sentiment.py",
+        "fingpt/FinGPT_ForexIntelligence/event_system.py",
+        "fingpt/FinGPT_Sentiment_Analysis_v3/README.md"
+      ],
+      "patterns": [
+        "multi-source sentiment with coverage",
+        "structured economic-event surprise and impact fields",
+        "financial language classification"
+      ],
+      "native_integration": "timestamped NLPEvent schema over existing news and SEC intelligence",
+      "explicit_exclusions": [
+        "large language model dependency",
+        "sentiment-to-buy mapping",
+        "second news database"
+      ]
+    },
+    {
+      "repo": "finrl_x",
+      "role": "AI_PORTFOLIO_RESEARCH_ORACLE",
+      "inspected_files": [
+        "src/strategies/ml_bucket_selection.py",
+        "src/strategies/adaptive_rotation/portfolio_builder.py",
+        "src/strategies/adaptive_rotation/risk_manager.py"
+      ],
+      "patterns": [
+        "validation weighted selection ensembles",
+        "weight proposal with explicit cash",
+        "risk overlay and deterministic fallback"
+      ],
+      "native_integration": "weight-only advisory shadow proposal translated by native portfolio constraints",
+      "explicit_exclusions": [
+        "direct allocation authority",
+        "broker quantities",
+        "replacement of native risk or portfolio manager"
+      ]
+    },
+    {
+      "repo": "finrobot",
+      "role": "FINANCIAL_RESEARCH_AGENT_ORACLE",
+      "inspected_files": [
+        "finrobot/agents/workflow.py",
+        "finrobot/data_source/sec_utils.py",
+        "finrobot/functional/quantitative.py"
+      ],
+      "patterns": [
+        "specialist agent evidence synthesis",
+        "SEC research separation",
+        "leader and reviewer workflow"
+      ],
+      "native_integration": "structured research evidence contracts only",
+      "explicit_exclusions": [
+        "free-text money control",
+        "external SEC API dependency",
+        "agent access to writer or authority"
+      ]
+    },
+    {
+      "repo": "trademaster",
+      "role": "RL_RESEARCH_ORACLE",
+      "inspected_files": [
+        "trademaster/environments/portfolio_management/environment.py",
+        "trademaster/environments/portfolio_management/deeptrader_environment.py",
+        "trademaster/trainers/portfolio_management/trainer.py"
+      ],
+      "patterns": [
+        "cash-aware portfolio action space",
+        "transaction-cost-aware state transition",
+        "temporal train-validation-test environment separation"
+      ],
+      "native_integration": "shadow-only constrained RL comparison with richer native penalties",
+      "explicit_exclusions": [
+        "raw-PnL-only reward",
+        "execution RL in live path",
+        "framework runtime dependency"
+      ]
+    },
+    {
+      "repo": "qlib",
+      "role": "ML_FOUNDATION_ORACLE",
+      "inspected_files": [
+        "qlib/contrib/model/pytorch_tcn.py",
+        "qlib/data/dataset/handler.py",
+        "qlib/workflow/record_temp.py"
+      ],
+      "patterns": [
+        "causal sequence model structure",
+        "feature handler and rolling dataset separation",
+        "model recorder and artifact lifecycle"
+      ],
+      "native_integration": "native TCN plus model, feature and evidence registries",
+      "explicit_exclusions": [
+        "Qlib portfolio optimizer in live allocation",
+        "Qlib runtime dependency",
+        "replacement of cash and whole-share sizing"
+      ]
+    },
+    {
+      "repo": "pybroker",
+      "role": "ROBUST_VALIDATION_ORACLE",
+      "inspected_files": [
+        "src/pybroker/strategy.py",
+        "src/pybroker/eval.py",
+        "src/pybroker/vect.py"
+      ],
+      "patterns": [
+        "walk-forward and train-test separation",
+        "bootstrap evaluation",
+        "ranking and model evaluation"
+      ],
+      "native_integration": "purged temporal splits and independent validation evidence",
+      "explicit_exclusions": [
+        "runtime dependency due Commons Clause",
+        "second backtest engine",
+        "automatic selection promotion"
+      ]
+    },
+    {
+      "repo": "vectorbt",
+      "role": "FAST_RESEARCH_ORACLE",
+      "inspected_files": [
+        "vectorbt/generic/splitters.py",
+        "vectorbt/portfolio/base.py",
+        "vectorbt/returns/accessors.py"
+      ],
+      "patterns": [
+        "vectorized screening",
+        "parameter sensitivity",
+        "cost and portfolio simulation"
+      ],
+      "native_integration": "existing native stage-0 screening and feasibility sensitivity",
+      "explicit_exclusions": [
+        "runtime dependency due Commons Clause",
+        "canonical live portfolio engine",
+        "broker path"
+      ]
+    },
+    {
+      "repo": "quantstats",
+      "role": "PERFORMANCE_VERIFICATION_ORACLE",
+      "inspected_files": [
+        "quantstats/stats.py",
+        "quantstats/reports.py",
+        "quantstats/_montecarlo.py"
+      ],
+      "patterns": [
+        "independent drawdown and rolling statistics",
+        "return distribution verification",
+        "Monte Carlo stress"
+      ],
+      "native_integration": "independent performance verification contract",
+      "explicit_exclusions": [
+        "performance source of truth",
+        "production dependency",
+        "profitability inference from test success"
+      ]
+    },
+    {
+      "repo": "lean",
+      "role": "QUANT_ARCHITECTURE_ORACLE",
+      "inspected_files": [
+        "Tests/Algorithm/Framework/Portfolio/PortfolioTargetTests.cs",
+        "Tests/Algorithm/Framework/Risk/MaximumDrawdownPercentPortfolioTests.cs",
+        "Tests/Algorithm/Framework/Execution/VolumeWeightedAveragePriceExecutionModelTests.cs"
+      ],
+      "patterns": [
+        "universe-alpha-portfolio-risk-execution separation",
+        "explicit portfolio targets",
+        "modular risk boundary"
+      ],
+      "native_integration": "current architecture map and native target chain",
+      "explicit_exclusions": [
+        "LEAN runtime migration",
+        "second execution engine",
+        "second ledger"
+      ]
+    },
+    {
+      "repo": "ib_async",
+      "role": "IBKR_EXECUTION_BEHAVIOR_ORACLE",
+      "inspected_files": [
+        "ib_async/wrapper.py",
+        "ib_async/order.py",
+        "ib_async/client.py"
+      ],
+      "patterns": [
+        "callback identity and lifecycle",
+        "execId and permId reconciliation",
+        "reconnect state handling"
+      ],
+      "native_integration": "existing official ibapi callback and reconciliation tests",
+      "explicit_exclusions": [
+        "import into production core",
+        "second IBKR client",
+        "broker authority"
+      ]
+    },
+    {
+      "repo": "lean_ibkr",
+      "role": "IBKR_BROKERAGE_BEHAVIOR_ORACLE",
+      "inspected_files": [
+        "QuantConnect.InteractiveBrokersBrokerage/InteractiveBrokersBrokerage.cs",
+        "QuantConnect.InteractiveBrokersBrokerage.Tests/InteractiveBrokersOrderTests.cs",
+        "QuantConnect.InteractiveBrokersBrokerage.Tests/InteractiveBrokersBrokerageHandleErrorTests.cs"
+      ],
+      "patterns": [
+        "duplicate callback and partial-fill behavior",
+        "broker error classification",
+        "brokerage restart semantics"
+      ],
+      "native_integration": "existing official ibapi state-machine and reconciliation invariants",
+      "explicit_exclusions": [
+        "C Sharp brokerage runtime",
+        "second order path",
+        "dependency addition"
+      ]
+    },
+    {
+      "repo": "nautilus_trader",
+      "role": "EXECUTION_INVARIANT_ORACLE",
+      "inspected_files": [
+        "crates/execution/src/reconciliation/orders.rs",
+        "crates/execution/src/order_manager/manager.rs",
+        "python/tests/unit/model/test_orders.py"
+      ],
+      "patterns": [
+        "deterministic event semantics",
+        "order and position reconciliation invariants",
+        "restart-safe state transitions"
+      ],
+      "native_integration": "existing deterministic native order lifecycle tests",
+      "explicit_exclusions": [
+        "Nautilus runtime",
+        "second event bus",
+        "second execution engine"
+      ]
+    },
+    {
+      "repo": "lumibot",
+      "role": "BROKER_STRATEGY_BOUNDARY_ORACLE",
+      "inspected_files": [
+        "lumibot/entities/order.py",
+        "lumibot/brokers/interactive_brokers.py",
+        "docs/BROKER_ORDER_SEMANTICS.md"
+      ],
+      "patterns": [
+        "strategy-broker separation",
+        "order entity lifecycle",
+        "broker resilience documentation"
+      ],
+      "native_integration": "existing strategy authority and execution bridge boundaries",
+      "explicit_exclusions": [
+        "GPL production code copy",
+        "broker adapter",
+        "strategy runtime"
+      ]
+    }
+  ]
+}

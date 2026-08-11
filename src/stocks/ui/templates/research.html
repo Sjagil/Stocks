@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metric-grid compact">
+  <article class="metric"><span>Bulk strategy DNA</span><strong>{{ "{:,}".format(viewmodel.strategy_registry.bulk_strategy_count) }}</strong></article>
+  <article class="metric"><span>Standard strategies</span><strong>{{ viewmodel.strategy_registry.standard_strategy_count }}</strong></article>
+  <article class="metric"><span>Future holdout</span><strong>{{ viewmodel.future_holdout }}</strong></article>
+  <article class="metric"><span>Broker calls</span><strong>{{ viewmodel.broker_calls }}</strong></article>
+</div>
+<div class="split-layout equal">
+  <section class="panel"><div class="panel-header"><div><h2>Phase 11.14</h2><p>Current integrated evidence</p></div></div><pre class="json-view">{{ viewmodel.phase11_14|tojson(indent=2) }}</pre></section>
+  <section class="panel"><div class="panel-header"><div><h2>Autopilot Leaderboard</h2><p>Research-only registry</p></div></div><pre class="json-view">{{ viewmodel.leaderboard|tojson(indent=2) }}</pre></section>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{
+  "schema": "phase11_3_listing_identity_overrides_v1",
+  "policy": "Only source-documented current exchange identities may reset the expected-session start. Sparse delisted controls remain visible but are excluded from the active research coverage gate.",
+  "overrides": {
+    "AAB": {
+      "classification": "DELISTED_HISTORY_UNAVAILABLE",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted survivorship-control instrument with no provider bars."
+    },
+    "AAAID": {
+      "classification": "DELISTED_HISTORY_PARTIAL",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted OTC survivorship-control instrument."
+    },
+    "AAALF": {
+      "classification": "DELISTED_HISTORY_PARTIAL",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted OTC survivorship-control instrument."
+    },
+    "AAALY": {
+      "classification": "DELISTED_HISTORY_PARTIAL",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted OTC survivorship-control instrument."
+    },
+    "AAARF": {
+      "classification": "DELISTED_HISTORY_PARTIAL",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted OTC survivorship-control instrument."
+    },
+    "AAC-U": {
+      "classification": "DELISTED_HISTORY_PARTIAL",
+      "coverage_gate_eligible": false,
+      "reason": "Delisted acquisition-company unit retained only as a survivorship control."
+    },
+    "APLD": {
+      "classification": "NASDAQ_IDENTITY_START",
+      "coverage_gate_eligible": true,
+      "effective_start": "2022-04-13",
+      "reason": "Current APLD Nasdaq identity began trading after its underwritten offering; earlier provider history belongs to an OTC/pre-uplisting identity.",
+      "sources": [
+        "https://ir.applieddigital.com/news-events/press-releases/detail/14/applied-blockchain-inc-announces-closing-of-initial",
+        "https://ir.applieddigital.com/sec-filings/all-sec-filings/content/0001144879-22-000048/aplds1finalresaleseptember.htm"
+      ]
+    },
+    "CPHI": {
+      "classification": "NYSE_AMERICAN_IDENTITY_START",
+      "coverage_gate_eligible": true,
+      "effective_start": "2009-09-30",
+      "reason": "The SEC records the NYSE listing certification on 2009-09-29; the next exchange session is used as the conservative current national-exchange identity start.",
+      "sources": [
+        "https://www.sec.gov/edgar/browse/?CIK=1106644"
+      ]
+    },
+    "NBIS": {
+      "classification": "NBIS_NASDAQ_IDENTITY_START",
+      "coverage_gate_eligible": true,
+      "effective_start": "2024-10-21",
+      "reason": "Nebius announced resumption of Nasdaq trading under the NBIS identity on this date.",
+      "sources": [
+        "https://nebius.com/newsroom/nebius-group-announces-planned-resumption-of-trading-on-nasdaq-and-provides-investor-update"
+      ]
+    },
+    "ONDS": {
+      "classification": "NASDAQ_IDENTITY_START",
+      "coverage_gate_eligible": true,
+      "effective_start": "2020-12-04",
+      "reason": "Ondas disclosed that Nasdaq trading began on 2020-12-04 after its OTCQB uplisting.",
+      "sources": [
+        "https://www.sec.gov/Archives/edgar/data/1646188/000121390021013984/f10k2020_ondasholdings.htm",
+        "https://www.sec.gov/Archives/edgar/data/1646188/000121390020040850/ea131006ex99-1_ondashold.htm"
+      ]
+    }
+  }
+}

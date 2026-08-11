@@ -1,0 +1,330 @@
+{
+  "schema": "asset_context_transmission_v1",
+  "version": "1.0.0",
+  "macro_score_range": [-100.0, 100.0],
+  "groups": {
+    "broad_equity": {
+      "sensitivities": {
+        "growth": 0.85,
+        "liquidity": 0.70,
+        "credit": 0.55,
+        "risk_appetite": 0.90,
+        "monetary": 0.35,
+        "currency": -0.20
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "technology_equity": {
+      "sensitivities": {
+        "growth": 0.75,
+        "liquidity": 0.90,
+        "credit": 0.35,
+        "risk_appetite": 0.95,
+        "monetary": 0.55,
+        "currency": 0.30,
+        "earnings_cycle": 0.75
+      },
+      "cot_market": "NASDAQ_100"
+    },
+    "financial_equity": {
+      "sensitivities": {
+        "growth": 0.70,
+        "credit": 0.90,
+        "monetary": 0.40,
+        "financial_stress": -0.90,
+        "risk_appetite": 0.55
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "industrial_equity": {
+      "sensitivities": {
+        "growth": 0.90,
+        "liquidity": 0.45,
+        "credit": 0.55,
+        "risk_appetite": 0.70,
+        "commodity": 0.35,
+        "earnings_cycle": 0.55
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "consumer_cyclical_equity": {
+      "sensitivities": {
+        "growth": 0.85,
+        "consumer": 0.90,
+        "credit": 0.55,
+        "liquidity": 0.45,
+        "risk_appetite": 0.75,
+        "earnings_cycle": 0.65
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "healthcare_equity": {
+      "sensitivities": {
+        "growth": 0.25,
+        "liquidity": 0.25,
+        "credit": 0.25,
+        "risk_appetite": 0.20,
+        "monetary": 0.15,
+        "earnings_cycle": 0.55
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "communication_equity": {
+      "sensitivities": {
+        "growth": 0.55,
+        "liquidity": 0.55,
+        "credit": 0.35,
+        "risk_appetite": 0.65,
+        "earnings_cycle": 0.65
+      },
+      "cot_market": "NASDAQ_100"
+    },
+    "real_estate_equity": {
+      "sensitivities": {
+        "growth": 0.35,
+        "credit": 0.85,
+        "monetary": 0.90,
+        "inflation": -0.30,
+        "financial_stress": -0.65,
+        "risk_appetite": 0.25
+      },
+      "cot_market": "UST_10Y"
+    },
+    "utility_equity": {
+      "sensitivities": {
+        "growth": 0.10,
+        "credit": 0.55,
+        "monetary": 0.75,
+        "inflation": -0.30,
+        "risk_appetite": -0.25
+      },
+      "cot_market": "UST_10Y"
+    },
+    "materials_equity": {
+      "sensitivities": {
+        "growth": 0.80,
+        "inflation": 0.25,
+        "currency": 0.45,
+        "commodity": 0.90,
+        "risk_appetite": 0.50
+      },
+      "cot_market": "COPPER"
+    },
+    "defensive_equity": {
+      "sensitivities": {
+        "growth": 0.20,
+        "liquidity": 0.20,
+        "credit": 0.30,
+        "risk_appetite": 0.15,
+        "inflation": -0.25
+      },
+      "cot_market": "US_EQUITY_INDEX"
+    },
+    "emerging_equity": {
+      "sensitivities": {
+        "growth": 0.85,
+        "liquidity": 0.75,
+        "risk_appetite": 0.85,
+        "currency": 0.85,
+        "commodity": 0.30
+      },
+      "cot_market": "USD_INDEX"
+    },
+    "gold": {
+      "sensitivities": {
+        "inflation": -0.25,
+        "monetary": 0.75,
+        "currency": 0.90,
+        "financial_stress": -0.55,
+        "liquidity": 0.35,
+        "risk_appetite": -0.25
+      },
+      "cot_market": "GOLD"
+    },
+    "silver": {
+      "sensitivities": {
+        "growth": 0.30,
+        "inflation": -0.15,
+        "monetary": 0.65,
+        "currency": 0.80,
+        "commodity": 0.55,
+        "risk_appetite": 0.15
+      },
+      "cot_market": "SILVER"
+    },
+    "energy": {
+      "sensitivities": {
+        "growth": 0.75,
+        "inflation": 0.40,
+        "currency": 0.45,
+        "commodity": 0.95,
+        "risk_appetite": 0.35
+      },
+      "cot_market": "WTI_CRUDE"
+    },
+    "industrial_metals": {
+      "sensitivities": {
+        "growth": 0.95,
+        "currency": 0.45,
+        "commodity": 0.90,
+        "risk_appetite": 0.55
+      },
+      "cot_market": "COPPER"
+    },
+    "uranium": {
+      "sensitivities": {
+        "growth": 0.35,
+        "inflation": 0.15,
+        "currency": 0.30,
+        "commodity": 0.70,
+        "risk_appetite": 0.45,
+        "energy_policy": 0.95
+      },
+      "cot_market": null
+    },
+    "platinum_group_metals": {
+      "sensitivities": {
+        "growth": 0.60,
+        "inflation": 0.10,
+        "currency": 0.65,
+        "commodity": 0.85,
+        "risk_appetite": 0.35,
+        "automotive_cycle": 0.70
+      },
+      "cot_market": null
+    },
+    "natural_gas": {
+      "sensitivities": {
+        "growth": 0.35,
+        "inflation": 0.30,
+        "currency": 0.25,
+        "commodity": 0.90,
+        "weather": 0.90
+      },
+      "cot_market": null
+    },
+    "critical_materials": {
+      "sensitivities": {
+        "growth": 0.75,
+        "currency": 0.35,
+        "commodity": 0.80,
+        "risk_appetite": 0.60,
+        "energy_policy": 0.70
+      },
+      "cot_market": null
+    },
+    "agriculture": {
+      "sensitivities": {
+        "inflation": 0.35,
+        "currency": 0.35,
+        "commodity": 0.70,
+        "growth": 0.15
+      },
+      "cot_market": "CORN"
+    },
+    "broad_commodity": {
+      "sensitivities": {
+        "growth": 0.45,
+        "inflation": 0.35,
+        "currency": 0.45,
+        "commodity": 0.90,
+        "risk_appetite": 0.30
+      },
+      "cot_market": null
+    },
+    "usd_currency": {
+      "sensitivities": {
+        "growth": -0.20,
+        "liquidity": -0.35,
+        "monetary": 0.65,
+        "currency": 1.00,
+        "financial_stress": 0.45,
+        "risk_appetite": -0.40
+      },
+      "cot_market": "USD_INDEX"
+    },
+    "long_duration_bond": {
+      "sensitivities": {
+        "growth": -0.55,
+        "inflation": 0.75,
+        "monetary": 0.90,
+        "financial_stress": 0.45,
+        "risk_appetite": -0.45
+      },
+      "cot_market": "UST_10Y"
+    },
+    "short_duration_bond": {
+      "sensitivities": {
+        "monetary": 0.45,
+        "inflation": 0.20,
+        "financial_stress": 0.20
+      },
+      "cot_market": "FED_FUNDS"
+    }
+  },
+  "symbols": {
+    "AAPL": "technology_equity",
+    "AMD": "technology_equity",
+    "ASML": "technology_equity",
+    "GOOGL": "technology_equity",
+    "META": "technology_equity",
+    "MSFT": "technology_equity",
+    "NVDA": "technology_equity",
+    "ON": "technology_equity",
+    "BRK-B": "financial_equity",
+    "QQQ": "technology_equity",
+    "SPY": "broad_equity",
+    "IWM": "broad_equity",
+    "EFA": "broad_equity",
+    "EEM": "emerging_equity",
+    "XLF": "financial_equity",
+    "XLP": "defensive_equity",
+    "XLU": "defensive_equity",
+    "XLV": "defensive_equity",
+    "GLD": "gold",
+    "IAU": "gold",
+    "SGLN": "gold",
+    "SLV": "silver",
+    "PPLT": "platinum_group_metals",
+    "PALL": "platinum_group_metals",
+    "SPPP": "platinum_group_metals",
+    "XLE": "energy",
+    "USO": "energy",
+    "BNO": "energy",
+    "UGA": "energy",
+    "UNG": "natural_gas",
+    "DBC": "broad_commodity",
+    "PDBC": "broad_commodity",
+    "XLB": "industrial_metals",
+    "DBB": "industrial_metals",
+    "CPER": "industrial_metals",
+    "SCOP": "industrial_metals",
+    "COPX": "industrial_metals",
+    "FCX": "industrial_metals",
+    "SCCO": "industrial_metals",
+    "URA": "uranium",
+    "URNM": "uranium",
+    "U-UN.TO": "uranium",
+    "CCJ": "uranium",
+    "UEC": "uranium",
+    "LEU": "uranium",
+    "LIT": "critical_materials",
+    "REMX": "critical_materials",
+    "EART": "critical_materials",
+    "PICK": "industrial_metals",
+    "XME": "industrial_metals",
+    "SLX": "industrial_metals",
+    "DBA": "agriculture",
+    "WEAT": "agriculture",
+    "CORN": "agriculture",
+    "SOYB": "agriculture",
+    "CANE": "agriculture",
+    "JO": "agriculture",
+    "NIB": "agriculture",
+    "UUP": "usd_currency",
+    "XLY": "consumer_cyclical_equity",
+    "TLT": "long_duration_bond",
+    "IEF": "long_duration_bond",
+    "SHY": "short_duration_bond"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "news_event_study_policy_v1",
+  "intraday_source_provider": "YFINANCE",
+  "daily_source_provider": "YFINANCE",
+  "market_benchmark": "SPY",
+  "horizons": {
+    "1h": {"source_interval": "1h", "bars": 1},
+    "4h": {"source_interval": "1h", "bars": 4},
+    "1d": {"source_interval": "1d", "bars": 1},
+    "5d": {"source_interval": "1d", "bars": 5},
+    "20d": {"source_interval": "1d", "bars": 20}
+  },
+  "minimum_beta_observations": {
+    "1h": 60,
+    "1d": 60
+  },
+  "maximum_beta_absolute_value": 3.0,
+  "training_gates": {
+    "smoke_minimum_causal_labels": 100,
+    "serious_shadow_minimum_causal_labels": 500
+  },
+  "sector_benchmarks": {
+    "Communication Services": "XLC",
+    "Consumer Cyclical": "XLY",
+    "Consumer Defensive": "XLP",
+    "Energy": "XLE",
+    "Financial Services": "XLF",
+    "Healthcare": "XLV",
+    "Industrials": "XLI",
+    "Real Estate": "XLRE",
+    "Technology": "XLK",
+    "Utilities": "XLU",
+    "Basic Materials": "XLB"
+  },
+  "event_time_contract": {
+    "operational_causal": "EARLIEST_RECEIVED_AT",
+    "historical_descriptive": "FIRST_PUBLISHED_AT",
+    "published_at_training_eligible": false,
+    "standalone_entry_allowed": false
+  }
+}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="alert info">
+  <i data-lucide="info"></i><div><strong>{{ instrument_kind }} classification</strong>
+  <span>Exposure type is explicit. Missing issuer, fee, holdings or curve data is not inferred.</span></div>
+</div>
+<section class="panel">
+  <div class="panel-header"><div><h2>Current {{ instrument_kind }} Signals</h2><p>{{ viewmodel.signal_count }} qualified or explicitly labelled watchlist signals{% if instrument_kind == 'Commodity exposure' %} · score is a signal-confidence proxy, not a portfolio opportunity score{% endif %}</p></div></div>
+  {% include "partials/signal_table.html" %}
+</section>
+<section class="panel">
+  <div class="panel-header"><div><h2>{{ instrument_kind }} Registry</h2><p>{{ viewmodel.count }} instruments</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Symbol</th><th>Name</th><th>Asset type</th><th>Exposure</th><th>Sector</th><th>Region</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.instruments %}
+      <tr><td><a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a></td><td>{{ row.name }}</td><td>{{ row.asset_type }}</td><td>{{ row.exposure_type }}</td><td>{{ row.sector }}</td><td>{{ row.region }}</td><td>{{ row.eligibility_status }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

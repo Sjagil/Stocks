@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="alert {{ 'danger' if viewmodel.authority.live != 'NONE' else 'warning' }}">
+  <i data-lucide="shield-alert"></i>
+  <div>
+    <strong>Execution is disabled</strong>
+    <span>Strategy {{ viewmodel.authority.strategy }} · execution {{ viewmodel.authority.execution }} · automatic submission false</span>
+  </div>
+</div>
+
+{% set account = viewmodel.account %}
+{% set today = viewmodel.performance.TODAY %}
+{% set week = viewmodel.performance.WEEK_TO_DATE %}
+{% set month = viewmodel.performance.MONTH_TO_DATE %}
+{% set year = viewmodel.performance.YEAR_TO_DATE %}
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Portfolio Overview</h2><p>Hash-verified private broker observations · unavailable is not zero</p></div>
+    <a href="/performance" class="text-link">Open P&amp;L calendar <i data-lucide="arrow-right"></i></a>
+  </div>
+  <div class="definition-grid">
+    <div><span>Portfolio value</span><strong>{{ ('€{:,.2f}'.format(account.portfolio_value_eur)) if account.portfolio_value_eur is not none else account.portfolio_value_status|replace('_', ' ') }}</strong></div>
+    <div><span>Today</span><strong>{{ ('%.2f%%'|format(today.return_pct * 100)) if today.return_pct is not none else today.status|replace('_', ' ') }}</strong></div>
+    <div><span>Week to date</span><strong>{{ ('%.2f%%'|format(week.return_pct * 100)) if week.return_pct is not none else week.status|replace('_', ' ') }}</strong></div>
+    <div><span>Month to date</span><strong>{{ ('%.2f%%'|format(month.return_pct * 100)) if month.return_pct is not none else month.status|replace('_', ' ') }}</strong></div>
+    <div><span>Year to date</span><strong>{{ ('%.2f%%'|format(year.return_pct * 100)) if year.return_pct is not none else year.status|replace('_', ' ') }}</strong></div>
+    <div><span>Cash</span><strong>{{ ('€{:,.2f}'.format(account.cash_eur)) if account.cash_eur is not none else account.cash_status|replace('_', ' ') }}</strong></div>
+    <div><span>High-water mark</span><strong>{{ ('€{:,.2f}'.format(account.high_water_mark_eur)) if account.high_water_mark_eur is not none else account.high_water_mark_status|replace('_', ' ') }}</strong></div>
+    <div><span>Current drawdown</span><strong>{{ ('%.2f%%'|format(account.current_drawdown_pct * 100)) if account.current_drawdown_pct is not none else account.high_water_mark_status|replace('_', ' ') }}</strong></div>
+    <div><span>Open risk</span><strong>{{ ('%.2f%%'|format(viewmodel.risk.open_risk * 100)) if viewmodel.risk.open_risk is not none else viewmodel.risk.open_risk_status|replace('_', ' ') }}</strong></div>
+    <div><span>Regime confidence</span><strong>{{ ('%.1f%%'|format(viewmodel.market.regime_confidence * 100)) if viewmodel.market.regime_confidence is not none else viewmodel.market.regime_confidence_status|replace('_', ' ') }}</strong></div>
+  </div>
+  <p class="panel-note">{{ account.financial_values_scope|replace('_', ' ') }} · {{ account.observation_count }} verified observations · no public financial artifact persisted</p>
+</section>
+
+<div class="metric-grid">
+  {% set metrics = [
+    ('Runtime', viewmodel.runtime.status, viewmodel.runtime.mode),
+    ('IBKR observer', viewmodel.broker.ibkr_status, viewmodel.broker.live_connection),
+    ('Reconciliation', viewmodel.broker.reconciliation, 'live account gate'),
+    ('Kill switch', viewmodel.risk.kill_switch, viewmodel.risk.capital_level),
+    ('Market regime', viewmodel.market.regime, viewmodel.market.market_state),
+    ('Research signals', viewmodel.research.signal_count, viewmodel.research.opportunity_count ~ ' opportunities'),
+    ('Asset analysis', viewmodel.research.analyzable_instrument_count, viewmodel.research.one_hour_instrument_count ~ ' 1h · ' ~ viewmodel.research.two_hour_instrument_count ~ ' 2h'),
+    ('Paper state', viewmodel.broker.paper_positions ~ ' pos', viewmodel.broker.paper_orders ~ ' open order'),
+    ('Approved exposure', '%.1f%%'|format(viewmodel.risk.approved_gross_exposure * 100), 'capital level 0'),
+    ('Dynamic slots', viewmodel.risk.dynamic_maximum_positions, viewmodel.risk.operational_maximum_positions ~ ' operational'),
+    ('Cash target', '%.1f%%'|format(viewmodel.risk.cash_target * 100), viewmodel.risk.equity_band|replace('_', ' '))
+  ] %}
+  {% for label, value, sub in metrics %}
+  <article class="metric">
+    <span>{{ label }}</span><strong class="{{ 'compact-value' if value|string|length > 18 else '' }}">{{ value|string|replace('_', ' ') }}</strong><small>{{ sub|string|replace('_', ' ') }}</small>
+  </article>
+  {% endfor %}
+</div>
+
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-header">
+      <div><h2>Diversified Signals</h2><p>Current ranked opportunities</p></div>
+      <a href="/signals" class="text-link">Open signals <i data-lucide="arrow-right"></i></a>
+    </div>
+    {% include "partials/signal_table.html" %}
+  </section>
+  <aside class="panel blockers">
+    <div class="panel-header"><div><h2>Live Blockers</h2><p>Fail-closed gates</p></div></div>
+    <ol class="blocker-list">
+      {% for blocker in viewmodel.blockers %}
+      <li><i data-lucide="circle-x"></i><span>{{ blocker|replace('_', ' ') }}</span></li>
+      {% else %}
+      <li><i data-lucide="check-circle-2"></i><span>No blockers reported</span></li>
+      {% endfor %}
+    </ol>
+  </aside>
+</div>
+
+<section class="panel">
+  <div class="panel-header"><div><h2>Current Market Context</h2><p>Context only; no authority</p></div></div>
+  <div class="definition-grid">
+    <div><span>Observed timeframes</span><strong>{{ viewmodel.market.observed_timeframes|join(', ') }}</strong></div>
+    <div><span>Research gross exposure</span><strong>{{ '%.1f%%'|format(viewmodel.risk.research_gross_exposure * 100) }}</strong></div>
+    <div><span>Daily PnL</span><strong>{{ viewmodel.risk.daily_pnl }}</strong></div>
+    <div><span>Portfolio drawdown</span><strong>{{ ('%.2f%%'|format(viewmodel.risk.portfolio_drawdown * 100)) if viewmodel.risk.portfolio_drawdown is not none else viewmodel.risk.portfolio_drawdown_status|replace('_', ' ') }}</strong></div>
+    <div><span>Drawdown velocity</span><strong>{{ ('%.3f%% / day'|format(viewmodel.risk.drawdown_velocity * 100)) if viewmodel.risk.drawdown_velocity is not none else viewmodel.risk.drawdown_velocity_status|replace('_', ' ') }}</strong></div>
+    <div><span>Risk multiplier</span><strong>{{ '%.1f%%'|format(viewmodel.risk.combined_risk_multiplier * 100) }}</strong></div>
+    <div><span>Portfolio heat</span><strong>{{ '%.2f%%'|format(viewmodel.risk.portfolio_heat * 100) }}</strong></div>
+    <div><span>Strategy DNA</span><strong>{{ "{:,}".format(viewmodel.research.strategy_dna_count) }}</strong></div>
+    <div><span>Entry shortlist</span><strong>{{ viewmodel.market_context.entry_shortlist_count }}</strong></div>
+    <div><span>Entry observer</span><strong>{{ viewmodel.market_context.entry_observer_status|replace('_', ' ') }}</strong></div>
+    <div><span>Observed tape</span><strong>{{ viewmodel.market_context.observed_equity_orderflow }}</strong></div>
+    <div><span>Hard vetoed</span><strong>{{ viewmodel.market_context.entry_signal_funnel.hard_vetoed or 0 }}</strong></div>
+    <div><span>Timeframe layer passed</span><strong>{{ viewmodel.market_context.entry_signal_funnel.timeframe_setup_ready or 0 }}</strong></div>
+    <div><span>Entry candidates</span><strong>{{ viewmodel.market_context.entry_signal_funnel.execution_candidates_authority_none or 0 }}</strong></div>
+    <div><span>Stock / ETF / commodity profiles</span><strong>{{ viewmodel.market_context.entry_asset_profile_counts.STOCK or 0 }} / {{ viewmodel.market_context.entry_asset_profile_counts.ETF or 0 }} / {{ viewmodel.market_context.entry_asset_profile_counts.COMMODITY_PROXY or 0 }}</strong></div>
+    <div><span>Forward episodes closed</span><strong>{{ viewmodel.market_context.terminal_episode_count }} / {{ viewmodel.market_context.terminal_episode_count + viewmodel.market_context.pending_episode_count }}</strong></div>
+    <div><span>Episode completeness</span><strong>{{ '%.1f%%'|format(viewmodel.market_context.episode_completion_ratio * 100) }}</strong></div>
+    <div><span>Selective ML</span><strong>{{ viewmodel.market_context.entry_ml_status|replace('_', ' ') }}</strong></div>
+    <div><span>Financial finalist</span><strong>FALSE</strong></div>
+  </div>
+  <p class="panel-note">Role-separated research: strategic allocation, active swing and tactical execution are not cross-ranked. Missing asset-specific inputs remain unavailable; bar-flow confirms entries: {{ viewmodel.market_context.bar_proxy_can_confirm_entry }}.</p>
+</section>
+
+{% set macro = viewmodel.macro %}
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Macro Control Board</h2><p>{{ macro.as_of or 'No current observation' }} · research context only · predictive claim false</p></div>
+    <span class="status-tag {{ 'actionable' if macro.status == 'GO' else 'persistent' }}">{{ macro.status|replace('_', ' ') }}</span>
+  </div>
+  <div class="definition-grid macro-grid">
+    {% for row in macro.indicators %}
+    <div>
+      <span>{{ row.label }}</span>
+      <strong>{{ row.display_value }}</strong>
+      <small>{{ row.status|replace('_', ' ') }}{% if row.direction and row.direction != 'UNKNOWN' %} · {{ row.direction|replace('_', ' ') }}{% endif %}{% if row.observed_at %} · {{ row.observed_at }}{% endif %}</small>
+    </div>
+    {% endfor %}
+    <div>
+      <span>Macro regime</span>
+      <strong>{{ macro.current_regime|replace('_', ' ') }}</strong>
+      <small>{{ ('%.1f%% confidence'|format(macro.regime_confidence * 100)) if macro.regime_confidence is not none else 'confidence unavailable' }}</small>
+    </div>
+    <div>
+      <span>Regime change</span>
+      <strong>{{ macro.regime_change|replace('_', ' ') }}</strong>
+      <small>{{ (macro.previous_regime|replace('_', ' ') ~ ' → ' ~ macro.current_regime|replace('_', ' ')) if macro.previous_regime else macro.hysteresis_status|replace('_', ' ') }}</small>
+    </div>
+  </div>
+  <p class="panel-note">Data quality {{ macro.data_quality_status|replace('_', ' ') }} · unavailable series remain unavailable · macro authority {{ macro.macro_analysis_authority|replace('_', ' ') }} · execution authority {{ macro.execution_authority }}</p>
+</section>
+
+<div class="split-layout equal">
+  <section class="panel">
+    <div class="panel-header">
+      <div><h2>Latest Market Intelligence</h2><p>{{ viewmodel.market.news_freshness }} · context only</p></div>
+      <a href="/news" class="text-link">All news <i data-lucide="arrow-right"></i></a>
+    </div>
+    <ol class="news-list">
+      {% for row in viewmodel.latest_news %}
+      <li>
+        <span class="sentiment-dot {{ 'positive' if 'POSITIVE' in row.direction else 'negative' if 'NEGATIVE' in row.direction else 'neutral' }}"></span>
+        <div><strong>{{ row.title }}</strong><small>{{ row.source }} · {{ row.published_at }} · {{ row.symbols|join(', ') }}</small></div>
+      </li>
+      {% else %}
+      <li class="empty">No current market-intelligence rows.</li>
+      {% endfor %}
+    </ol>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Proactive Controls</h2><p>Current gates and refresh state</p></div></div>
+    <div class="definition-grid compact-definitions">
+      <div><span>1h coverage</span><strong>{{ viewmodel.research.one_hour_instrument_count }}</strong></div>
+      <div><span>2h coverage</span><strong>{{ viewmodel.research.two_hour_instrument_count }}</strong></div>
+      <div><span>Intraday readiness</span><strong>{{ viewmodel.market.intraday_data_status|replace('_', ' ') }}</strong></div>
+      <div><span>Fresh intraday pairs</span><strong>{{ viewmodel.market.fresh_intraday_pair_count }} / {{ viewmodel.market.requested_intraday_pair_count }}</strong></div>
+      <div><span>Core data</span><strong>{{ viewmodel.market.core_data_readiness|replace('_', ' ') }}</strong></div>
+      <div><span>Open data gaps</span><strong>{{ viewmodel.market.open_data_gap_count }}</strong></div>
+      <div><span>Microstructure</span><strong>{{ viewmodel.market.microstructure_data_status|replace('_', ' ') }}</strong></div>
+      <div><span>Event risk 24h</span><strong>{{ viewmodel.market.event_risk_within_24h }}</strong></div>
+      <div><span>Profit target</span><strong>{{ viewmodel.risk.daily_profit_target_status }}</strong></div>
+    </div>
+  </section>
+</div>
+{% endblock %}

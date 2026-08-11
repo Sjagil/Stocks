@@ -1,0 +1,12 @@
+{
+  "schema": "phase11_3_sec_acceptance_overrides_v1",
+  "policy": "Exact SEC filing-detail acceptance timestamps may repair missing companyfacts joins. Overrides require an accession hash and an official SEC source URL.",
+  "overrides": {
+    "ECDCAEB94637A429D01488341224525B4CC74E1B0195D3760FE8380F0BA0E2E6": {
+      "accepted_at": "2022-02-24T16:13:45-05:00",
+      "classification": "SEC_FILING_DETAIL_ACCEPTANCE_TIME",
+      "source": "https://www.sec.gov/Archives/edgar/data/1108524/000110852422000008/0001108524-22-000008-index.htm",
+      "symbol": "CRM"
+    }
+  }
+}

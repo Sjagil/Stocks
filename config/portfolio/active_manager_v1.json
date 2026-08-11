@@ -1,0 +1,225 @@
+{
+  "schema": "active_multi_asset_portfolio_policy_v1",
+  "base_currency": "EUR",
+  "primary_timeframes": ["1h", "4h", "1d", "1w"],
+  "active_swing_timeframe_policy": {
+    "information_weights": {
+      "1w": 0.05,
+      "1d": 0.15,
+      "4h": 0.30,
+      "2h": 0.20,
+      "1h": 0.30
+    },
+    "higher_timeframe_policy": "MULTIPLIER_NOT_AUTOMATIC_VETO",
+    "timing_15m_status": "UNAVAILABLE_RESEARCH_CONTRACT_FORBIDS_15M"
+  },
+  "opportunity_classes": ["TREND", "REVERSAL", "REAL_ASSET"],
+  "real_asset_context": {
+    "ranking_influence": "OBSERVATION_ONLY_PENDING_ABLATION",
+    "standalone_entry_allowed": false,
+    "required_before_ranking_influence": [
+      "CAUSAL_POINT_IN_TIME_INPUT",
+      "FORWARD_EPISODE_EVIDENCE",
+      "COST_STRESSED_ABLATION_GO"
+    ]
+  },
+  "execution_authority": "NONE",
+  "automatic_order_submission": false,
+  "multi_layer_confluence": {
+    "schema": "technical_fundamental_macro_confluence_policy_v1",
+    "weights": {
+      "technical": 0.50,
+      "fundamental": 0.30,
+      "macro": 0.20
+    },
+    "thresholds": {
+      "supportive": 0.60,
+      "adverse": 0.40,
+      "minimum_fundamental": 0.35,
+      "severe_macro_headwind": 0.30,
+      "minimum_macro_confidence_for_headwind": 0.50
+    },
+    "fundamentals_required_for_stocks": true,
+    "macro_context_required": true,
+    "standalone_entry_allowed": false
+  },
+  "news_event_overlay": {
+    "enabled": true,
+    "maximum_absolute_ranking_adjustment": 0.04,
+    "maximum_individual_event_adjustment": 0.015,
+    "minimum_materiality": 0.22,
+    "hard_risk_review_required": true,
+    "standalone_entry_allowed": false,
+    "historical_financial_validation": "PENDING_CAUSAL_CAR_ABLATION"
+  },
+  "opportunity_weights": {
+    "signal_quality": 0.18,
+    "strategy_family_breadth": 0.08,
+    "timeframe_confirmation": 0.10,
+    "fundamental_quality": 0.10,
+    "liquidity": 0.07,
+    "regime_fit": 0.15,
+    "relative_strength": 0.1,
+    "setup_quality": 0.07,
+    "orderflow_context": 0.08,
+    "gex_context": 0.07
+  },
+  "penalties": {
+    "event_risk": 0.12,
+    "data_quality": 0.15,
+    "correlation": 0.15,
+    "concentration": 0.1,
+    "unresolved_contract": 0.08
+  },
+  "ranking": {
+    "minimum_research_score": 0.45,
+    "minimum_allocation_score": 0.55,
+    "minimum_hold_score": 0.4,
+    "minimum_add_score": 0.7,
+    "exit_score": 0.3,
+    "replacement_improvement": 0.12,
+    "switching_cost_score": 0.025,
+    "maximum_published_opportunities": 25
+  },
+  "candidate_funnel": {
+    "maximum_watchlist_candidates": 100,
+    "maximum_portfolio_candidates": 30,
+    "maximum_execution_candidates": 10,
+    "maximum_rejection_audit_rows": 50,
+    "per_family_limit": 20,
+    "minimum_screener_score": 0.55,
+    "hidden_gem_minimum_market_cap": 300000000,
+    "hidden_gem_maximum_market_cap": 10000000000,
+    "screener_candidates_require_current_classification": true
+  },
+  "small_account_whole_share": {
+    "enabled": true,
+    "maximum_equity_eur": 10000,
+    "maximum_positions": 4,
+    "minimum_meaningful_target_weight": 0.10,
+    "maximum_stock_weight": 0.35,
+    "maximum_etf_weight": 0.40,
+    "maximum_discrete_exposure": 0.60,
+    "base_risk_per_trade": 0.01,
+    "maximum_risk_per_trade": 0.015,
+    "maximum_portfolio_heat": 0.06,
+    "protective_take_profit_reward_to_risk": 2.0,
+    "round_up_to_one_share_when_risk_feasible": true,
+    "transaction_cost_model": {
+      "enabled": true,
+      "estimated_entry_commission_eur": 0.35,
+      "estimated_slippage_bps": 5,
+      "maximum_cost_to_initial_risk_ratio": 1.0,
+      "minimum_economic_notional_eur": 5
+    }
+  },
+  "portfolio": {
+    "research_maximum_exposure": 0.5,
+    "shadow_base_risk_per_trade": 0.0035,
+    "maximum_positions": 10,
+    "maximum_stock_weight": 0.08,
+    "maximum_etf_weight": 0.15,
+    "maximum_portfolio_heat": 0.04,
+    "maximum_sector_weight": 0.2,
+    "maximum_region_weight": 0.35,
+    "maximum_correlated_bucket_weight": 0.3,
+    "correlation_threshold": 0.75,
+    "correlation_window_sessions": 126,
+    "maximum_turnover_per_rebalance": 0.25,
+    "cash_is_valid_allocation": true
+  },
+  "sleeve_caps": {
+    "stock": 0.45,
+    "etf_core": 0.45,
+    "bond_defensive": 0.35,
+    "commodity_security": 0.2,
+    "cash": 1.0
+  },
+  "asset_class_caps": {
+    "EQUITY": 0.45,
+    "ETF": 0.45,
+    "COMMODITY_EXPOSURE": 0.20,
+    "CASH": 1.0
+  },
+  "target_layer": {
+    "minimum_rebalance_notional_eur": 5.0,
+    "submits_orders": false
+  },
+  "rotation": {
+    "minimum_expected_net_return_improvement": 0.02,
+    "minimum_score_improvement": 0.12,
+    "require_correlation_cluster_change": true,
+    "transaction_costs_required": true
+  },
+  "regime_multipliers": {
+    "BULL_TREND_LOW_VOL": 1.0,
+    "BULL_TREND_HIGH_VOL": 0.75,
+    "RECOVERY": 0.8,
+    "SIDEWAYS_LOW_VOL": 0.65,
+    "SIDEWAYS_HIGH_VOL": 0.45,
+    "BEAR_TREND": 0.25,
+    "CRISIS": 0.0,
+    "UNKNOWN": 0.4
+  },
+  "macro_market_multipliers": {
+    "RISK_ON": 1.0,
+    "NEUTRAL": 0.8,
+    "RISK_OFF": 0.5,
+    "UNKNOWN": 0.65
+  },
+  "asset_metadata": {
+    "ACWI": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "GLOBAL"},
+    "SPY": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "UNITED_STATES"},
+    "QQQ": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "TECHNOLOGY", "region": "UNITED_STATES"},
+    "IWM": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "SMALL_CAP", "region": "UNITED_STATES"},
+    "IEUR": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "EUROPE"},
+    "EWJ": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "JAPAN"},
+    "EEM": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "EMERGING_MARKETS"},
+    "MCHI": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "CHINA"},
+    "INDA": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "BROAD_MARKET", "region": "INDIA"},
+    "BIL": {"asset_type": "BOND_ETF", "sleeve": "bond_defensive", "sector": "SHORT_TREASURY", "region": "UNITED_STATES"},
+    "IEF": {"asset_type": "BOND_ETF", "sleeve": "bond_defensive", "sector": "TREASURY", "region": "UNITED_STATES"},
+    "TLT": {"asset_type": "BOND_ETF", "sleeve": "bond_defensive", "sector": "LONG_TREASURY", "region": "UNITED_STATES"},
+    "GLD": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "GOLD", "region": "GLOBAL"},
+    "SLV": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "SILVER", "region": "GLOBAL"},
+    "DBC": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "BROAD_COMMODITY", "region": "GLOBAL"},
+    "DBB": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "INDUSTRIAL_METALS", "region": "GLOBAL"},
+    "DBA": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "AGRICULTURE", "region": "GLOBAL"},
+    "CPER": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "COPPER", "region": "GLOBAL"},
+    "SCOP": {"asset_type": "COMMODITY_CLOSED_END_TRUST", "sleeve": "commodity_security", "sector": "COPPER", "region": "GLOBAL"},
+    "COPX": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "COPPER_MINERS", "region": "GLOBAL"},
+    "URA": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "URANIUM_MINERS", "region": "GLOBAL"},
+    "URNM": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "URANIUM_MINERS", "region": "GLOBAL"},
+    "U-UN.TO": {"asset_type": "COMMODITY_CLOSED_END_TRUST", "sleeve": "commodity_security", "sector": "URANIUM", "region": "GLOBAL"},
+    "PPLT": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "PLATINUM", "region": "GLOBAL"},
+    "PALL": {"asset_type": "COMMODITY_ETF", "sleeve": "commodity_security", "sector": "PALLADIUM", "region": "GLOBAL"},
+    "SPPP": {"asset_type": "COMMODITY_CLOSED_END_TRUST", "sleeve": "commodity_security", "sector": "PLATINUM_GROUP_METALS", "region": "GLOBAL"},
+    "LIT": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "BATTERY_MATERIALS", "region": "GLOBAL"},
+    "REMX": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "RARE_EARTHS", "region": "GLOBAL"},
+    "EART": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "CRITICAL_MATERIALS", "region": "GLOBAL"},
+    "PICK": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "DIVERSIFIED_METALS_MINING", "region": "GLOBAL"},
+    "XME": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "METALS_MINING", "region": "UNITED_STATES"},
+    "SLX": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "STEEL", "region": "GLOBAL"},
+    "WOOD": {"asset_type": "COMMODITY_EQUITY_ETF", "sleeve": "commodity_security", "sector": "TIMBER", "region": "GLOBAL"},
+    "SPUS": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "SHARIAH_US_EQUITY", "region": "UNITED_STATES"},
+    "HLAL": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "SHARIAH_US_EQUITY", "region": "UNITED_STATES"},
+    "UMMA": {"asset_type": "ETF", "sleeve": "etf_core", "sector": "SHARIAH_INTERNATIONAL_EQUITY", "region": "GLOBAL_EX_US"},
+    "SPSK": {"asset_type": "SUKUK_ETF", "sleeve": "bond_defensive", "sector": "GLOBAL_SUKUK", "region": "GLOBAL"}
+  },
+  "action_policy": {
+    "allowed_actions": [
+      "HOLD",
+      "ADD",
+      "REDUCE",
+      "EXIT",
+      "REPLACE",
+      "TAKE_PARTIAL_PROFIT",
+      "TIGHTEN_STOP",
+      "UPDATE_TRAILING_STOP",
+      "BLOCK_NEW_ENTRY"
+    ],
+    "risk_increasing_actions_require_execution_authority": true,
+    "daily_profit_target_is_soft_throttle": true,
+    "daily_profit_target_never_forces_liquidation": true
+  }
+}

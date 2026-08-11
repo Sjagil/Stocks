@@ -1,0 +1,37 @@
+phase: PHASE11_1_ORTHOGONAL_PIT_DATA_AND_ALPHA_STRATEGY_FOUNDATION
+pit_rule: available_at <= decision_timestamp
+strategies:
+  - EARNINGS_REVISION_GUIDANCE_TREND_V1
+  - FUNDAMENTAL_INFLECTION_NEWS_CATALYST_V1
+  - QUALITY_VALUE_MOMENTUM_NEWS_VETO_V1
+overlays:
+  - MACRO_REGIME_EXPOSURE_OVERLAY_V1
+  - NEGATIVE_NEWS_RISK_OVERLAY_V1
+  - SHARIAH_ELIGIBILITY_GATE_V1
+  - CAPITAL_PRESERVATION_ROTATION_V1
+  - DAILY_MOVERS_DISCOVERY_ENGINE_V1
+allowed_asset_classes:
+  - STOCK
+  - SHARIAH_EQUITY_ETF
+  - APPROVED_PHYSICAL_COMMODITY_PRODUCT
+blocked_asset_classes:
+  - BOND
+  - CONVENTIONAL_FIXED_INCOME
+  - FUTURE
+  - OPTION
+  - SWAP
+  - CFD
+  - SHORT
+  - MARGIN
+  - LEVERAGED_ETF
+  - INVERSE_ETF
+  - SYNTHETIC_ETF
+cash_policy:
+  minimum_cash_target: 0.025
+  normal_cash_target: 0.05
+  maximum_emergency_cash: 0.10
+authority:
+  strategy_authority: NONE
+  shadow_authority: NONE
+  execution_authority: NONE
+  broker_observation_authority: READ_ONLY

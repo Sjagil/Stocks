@@ -1,0 +1,8 @@
+# Phase 11.1 Freeze Report
+
+freeze_status: PHASE11_1_ORTHOGONAL_PIT_DATA_AND_ALPHA_STRATEGY_FOUNDATION_FROZEN_GO
+phase11_1_status: PHASE11_1_ORTHOGONAL_PIT_DATA_AND_ALPHA_STRATEGY_FOUNDATION_GO
+financial_decision: NO_NEW_FINANCIAL_CANDIDATE
+execution_authority: NONE
+provider_calls: 0
+broker_write_attempts: 0

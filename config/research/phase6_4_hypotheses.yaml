@@ -1,0 +1,128 @@
+schema: phase6_4_preregistered_hypothesis_registry_v1
+calculation_version: phase6_4_preregistered_mechanism_research_v1
+preregistered_at: "2026-07-21T00:00:00+00:00"
+hypotheses:
+  - hypothesis_id: HYP_A_DIVERSIFIED_DUAL_MOMENTUM
+    version: "1.0"
+    economic_rationale: "Relative momentum may identify persistent capital-flow leadership while absolute trend protection reduces left-tail participation."
+    expected_mechanism: "Select diversified leaders with positive 12-1 momentum and SMA200 confirmation."
+    expected_holding_period: "1 to 6 months"
+    expected_market_regimes: ["broad risk-on", "persistent regional leadership", "commodity trend leadership"]
+    expected_failure_regimes: ["sharp reversals", "sideways whipsaw", "all-risk drawdown with delayed trend exits"]
+    eligible_universe_rule: "Frozen Phase 5 common-history EUR total-return universe; risk assets exclude cash and defensive bonds."
+    signal_definition:
+      relative_momentum: "12-1 months"
+      absolute_trend: "close_above_SMA200"
+      selection: "top_3_eligible_risk_assets"
+    rebalance_rule: "monthly_after_closed_daily_bar_next_session_proxy"
+    weighting_rule:
+      method: "equal_selected_with_caps"
+      instrument_cap: 0.35
+      region_cap: 0.50
+      sleeve_cap: 0.60
+    cash_rule: "fallback_to_cash_sleeve_or_BIL"
+    risk_constraints:
+      instrument_cap: 0.35
+      region_cap: 0.50
+      sleeve_cap: 0.60
+    transaction_costs:
+      base_bps: 10
+      stress_bps: [20, 30, 50]
+    maximum_turnover: 1.0
+    comparison_benchmarks: ["EQUAL_WEIGHT", "INVERSE_VOLATILITY", "TREND_200D", "MOMENTUM_ROTATION", "BUY_AND_HOLD_GLD", "CASH_BIL"]
+    null_hypothesis: "Diversified dual momentum has no positive incremental OOS edge after costs versus diversified benchmark champion and GLD."
+    success_criteria: "Positive OOS return, period PF above 1.05, no blocking concentration, and positive paired evidence."
+    rejection_criteria: "No positive OOS edge, fragile concentration, harmful ablation result, or weak bootstrap evidence."
+    parameter_hash: "9ABD1F30E651F3550859A2D2A40F54238589C2480B1503DEA9EE1B73CA16A7C4"
+  - hypothesis_id: HYP_B_TREND_BREADTH_RISK_ALLOCATION
+    version: "1.0"
+    economic_rationale: "Market breadth can proxy aggregate trend health and allocate risk lower before broad drawdowns."
+    expected_mechanism: "Allocate risk, bond, gold, and cash sleeves according to fixed SMA200 breadth regimes."
+    expected_holding_period: "1 to 12 months"
+    expected_market_regimes: ["persistent bull market", "partial risk deterioration", "broad bear market"]
+    expected_failure_regimes: ["false breadth breakdown", "inflation shock to bonds", "rapid V-shaped recovery"]
+    eligible_universe_rule: "Frozen Phase 5 common-history EUR total-return universe grouped into risk assets, bonds, gold, and cash."
+    signal_definition:
+      breadth: "share_of_risk_assets_above_SMA200"
+      volatility_window: 63
+    rebalance_rule: "monthly_after_closed_daily_bar_next_session_proxy"
+    weighting_rule:
+      method: "fixed_breadth_regime_allocations_with_inverse_vol_inside_sleeves"
+      high_breadth: {threshold: 0.70, risk: 0.80, bonds: 0.10, gold: 0.00, cash: 0.10}
+      medium_breadth: {lower: 0.40, upper: 0.70, risk: 0.50, bonds: 0.25, gold: 0.15, cash: 0.10}
+      low_breadth: {threshold: 0.40, risk: 0.20, bonds: 0.30, gold: 0.30, cash: 0.20}
+    cash_rule: "explicit_cash_weight_by_breadth_regime"
+    risk_constraints:
+      sleeve_allocations_fixed: true
+    transaction_costs:
+      base_bps: 10
+      stress_bps: [20, 30, 50]
+    maximum_turnover: 1.0
+    comparison_benchmarks: ["EQUAL_WEIGHT", "INVERSE_VOLATILITY", "TREND_200D", "MOMENTUM_ROTATION", "BUY_AND_HOLD_GLD", "CASH_BIL"]
+    null_hypothesis: "Trend breadth allocation has no positive incremental OOS edge after costs versus diversified benchmark champion and GLD."
+    success_criteria: "Breadth regimes improve risk-adjusted OOS returns after costs without concentration breaches."
+    rejection_criteria: "Breadth regime allocation is harmful or no better than diversified benchmarks."
+    parameter_hash: "A48AD5FE31727A1E16B1894F0A65CBF513C3E4FE55F284A13086F832A761BFE9"
+  - hypothesis_id: HYP_C_DIVERSIFIED_TREND_RISK_PARITY
+    version: "1.0"
+    economic_rationale: "Combining trend gating and inverse-volatility diversification may reduce drawdowns while keeping broad participation."
+    expected_mechanism: "Hold SMA200-positive instruments with inverse-volatility weights, caps, and 10% volatility scaling."
+    expected_holding_period: "1 to 9 months"
+    expected_market_regimes: ["persistent cross-asset trends", "moderate volatility", "diversified leadership"]
+    expected_failure_regimes: ["correlation spike", "trend whipsaw", "volatility estimate lag"]
+    eligible_universe_rule: "Frozen Phase 5 common-history EUR total-return universe excluding cash until residual budget."
+    signal_definition:
+      trend_gate: "close_above_SMA200"
+      volatility_window: 63
+      target_volatility: 0.10
+    rebalance_rule: "monthly_after_closed_daily_bar_next_session_proxy"
+    weighting_rule:
+      method: "inverse_volatility_with_trend_gate_caps_and_target_volatility"
+      instrument_cap: 0.30
+      region_cap: 0.50
+      sleeve_cap: 0.55
+    cash_rule: "negative_trend_budget_to_cash"
+    risk_constraints:
+      instrument_cap: 0.30
+      region_cap: 0.50
+      sleeve_cap: 0.55
+      target_volatility: 0.10
+    transaction_costs:
+      base_bps: 10
+      stress_bps: [20, 30, 50]
+    maximum_turnover: 1.0
+    comparison_benchmarks: ["EQUAL_WEIGHT", "INVERSE_VOLATILITY", "TREND_200D", "MOMENTUM_ROTATION", "BUY_AND_HOLD_GLD", "CASH_BIL"]
+    null_hypothesis: "Diversified trend risk parity has no positive incremental OOS edge after costs versus diversified benchmark champion and GLD."
+    success_criteria: "Positive OOS edge with lower drawdown and no fragile concentration."
+    rejection_criteria: "Trend and vol scaling fail to add value after costs or create fragility."
+    parameter_hash: "56FA37EA2F9511B7C27E3215F3FA99111031231FA4B90B3E98BEC425B65DA288"
+  - hypothesis_id: HYP_D_CRISIS_RESILIENT_SLEEVE_ROTATION
+    version: "1.0"
+    economic_rationale: "Sleeve-level rotation can reduce single-instrument noise while keeping exposure to persistent macro themes."
+    expected_mechanism: "Rank sleeves by fixed composite momentum and trend score, then diversify within selected sleeves."
+    expected_holding_period: "1 to 12 months"
+    expected_market_regimes: ["macro sleeve leadership", "commodity or bond crisis leadership", "equity risk-on"]
+    expected_failure_regimes: ["mixed sleeve signals", "fast regime transition", "all sleeves negative"]
+    eligible_universe_rule: "Frozen Phase 5 common-history EUR total-return universe grouped into equity, bond, commodity, and cash sleeves."
+    signal_definition:
+      sleeve_score: "0.50*z_12_1_momentum + 0.30*z_6_month_momentum + 0.20*SMA200_binary"
+      selected_sleeves: 2
+    rebalance_rule: "monthly_after_closed_daily_bar_next_session_proxy"
+    weighting_rule:
+      method: "max_two_positive_sleeves_with_inverse_volatility_inside_sleeve"
+      minimum_cash_weight: 0.10
+      maximum_sleeve_weight: 0.55
+      volatility_window: 63
+    cash_rule: "100_percent_cash_when_no_positive_sleeve_else_minimum_10_percent_cash"
+    risk_constraints:
+      minimum_cash_weight: 0.10
+      maximum_sleeve_weight: 0.55
+    transaction_costs:
+      base_bps: 10
+      stress_bps: [20, 30, 50]
+    maximum_turnover: 1.0
+    comparison_benchmarks: ["EQUAL_WEIGHT", "INVERSE_VOLATILITY", "TREND_200D", "MOMENTUM_ROTATION", "BUY_AND_HOLD_GLD", "CASH_BIL"]
+    null_hypothesis: "Crisis-resilient sleeve rotation has no positive incremental OOS edge after costs versus diversified benchmark champion and GLD."
+    success_criteria: "Sleeve rotation improves OOS resilience and return evidence without concentration breaches."
+    rejection_criteria: "Sleeve score does not add value or negative-score filter is harmful."
+    parameter_hash: "41FC753189A4A43E43FB245124ADAE5612A1A9540E3A0D73D56912ED6F88A6F8"

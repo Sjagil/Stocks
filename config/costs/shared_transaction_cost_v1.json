@@ -1,0 +1,17 @@
+{
+  "schema": "shared_transaction_cost_model_v1",
+  "base_currency": "EUR",
+  "commission": {
+    "minimum_per_order_eur": 0.35,
+    "variable_bps": 0.0
+  },
+  "exchange_fees_bps": 0.0,
+  "half_spread_bps": 1.0,
+  "slippage_bps": 5.0,
+  "market_impact_bps": 1.0,
+  "fx_conversion_bps": 10.0,
+  "minimum_practical_trade_eur": 5.0,
+  "round_trip_for_opportunity_economics": true,
+  "whole_share_rounding": true,
+  "execution_authority": "NONE"
+}

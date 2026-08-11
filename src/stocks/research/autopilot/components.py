@@ -1,0 +1,230 @@
+from __future__ import annotations
+
+from collections import Counter
+from typing import Any
+
+from stocks.research.autopilot.contracts import (
+    ALLOWED_SWING_TIMEFRAMES,
+    ComponentSpec,
+    stable_hash,
+)
+
+
+ASSETS = ("STOCK", "ETF", "COMMODITY_ETF", "ETC")
+DAILY_PLUS = ("1d", "1w", "1mo")
+MACRO_COMPONENT_NAMES = frozenset(
+    {
+        "macro_growth_accelerating",
+        "macro_growth_slowing",
+        "macro_inflation_rising",
+        "macro_inflation_falling",
+        "macro_liquidity_expanding",
+        "macro_liquidity_contracting",
+        "macro_credit_improving",
+        "macro_credit_deteriorating",
+        "macro_breadth_improving",
+        "macro_breadth_deteriorating",
+        "macro_risk_on",
+        "macro_risk_off",
+        "macro_dollar_strengthening",
+        "macro_dollar_weakening",
+        "macro_commodity_inflation",
+        "macro_defensive_regime",
+        "macro_cyclical_regime",
+    }
+)
+INTRADAY_PLUS = ("1h", "2h", "4h", "6h", "12h", "1d")
+
+
+def _spec(
+    name: str,
+    category: str,
+    formula: str,
+    *,
+    columns: tuple[str, ...] = ("close",),
+    timeframes: tuple[str, ...] = ALLOWED_SWING_TIMEFRAMES,
+    history: int = 252,
+    bounds: dict[str, tuple[float, float]] | None = None,
+    lookback: int = 252,
+    output: str = "numeric",
+    assets: tuple[str, ...] = ASSETS,
+    test_status: str = "FORMULA_REGISTERED",
+    unit: str = "dimensionless",
+    output_range: str = "unbounded",
+    causality_status: str = "CAUSAL_CLOSED_BAR",
+) -> ComponentSpec:
+    return ComponentSpec(
+        name=name,
+        version="1.0.0",
+        category=category,
+        formula=formula,
+        required_columns=columns,
+        supported_timeframes=timeframes,
+        minimum_history=history,
+        parameter_bounds=bounds or {},
+        lookback=lookback,
+        warmup=max(history, lookback),
+        causality_rule="closed_candles_only; output available at bar_close_utc",
+        asset_compatibility=assets,
+        output_type=output,
+        missing_data_policy="FAIL_CLOSED",
+        test_status=test_status,
+        unit=unit,
+        output_range=output_range,
+        causality_status=causality_status,
+    )
+
+
+def component_registry() -> dict[str, ComponentSpec]:
+    components = [
+        _spec("sma_trend", "trend", "SMA(close,n)", bounds={"period": (10, 300)}),
+        _spec("ema_trend", "trend", "EMA(close,n)", bounds={"period": (10, 300)}),
+        _spec("ma_alignment", "trend", "EMA_fast > EMA_slow", bounds={"fast": (10, 150), "slow": (50, 400)}, output="boolean"),
+        _spec("price_above_ma", "trend", "close > MA(close,n)", bounds={"period": (20, 300)}, output="boolean"),
+        _spec("ma_slope", "trend", "MA_t / MA_t-k - 1", bounds={"period": (20, 300), "lag": (1, 20)}),
+        _spec("breakout", "trend", "close > max(high[-n:-1])", columns=("high", "close"), bounds={"period": (10, 252)}, output="boolean"),
+        _spec("donchian_breakout", "trend", "close > DonchianHigh(n)", columns=("high", "low", "close"), bounds={"period": (10, 252)}, output="boolean"),
+        _spec("trend_persistence", "trend", "mean(close > MA)", bounds={"period": (20, 252)}),
+        _spec("trend_strength", "trend", "(EMA_fast-EMA_slow)/ATR", columns=("high", "low", "close")),
+        _spec("supertrend", "trend", "causal ATR band state", columns=("high", "low", "close"), bounds={"period": (7, 30), "multiplier": (1, 5)}),
+        _spec("higher_high_lower_low", "structure", "HH/HL state from confirmed pivots", columns=("high", "low"), output="categorical"),
+        _spec("confirmed_fractal_structure", "structure", "pivot confirmed after r closed right bars", columns=("high", "low"), bounds={"left": (2, 10), "right": (2, 10)}, output="categorical"),
+        _spec("momentum_1m", "momentum", "close/close[-21]-1", timeframes=DAILY_PLUS, history=22, lookback=21),
+        _spec("momentum_3m", "momentum", "close/close[-63]-1", timeframes=DAILY_PLUS, history=64, lookback=63),
+        _spec("momentum_6m", "momentum", "close/close[-126]-1", timeframes=DAILY_PLUS, history=127, lookback=126),
+        _spec("momentum_12m", "momentum", "close/close[-252]-1", timeframes=DAILY_PLUS, history=253, lookback=252),
+        _spec("momentum_12_1", "momentum", "close[-21]/close[-252]-1", timeframes=DAILY_PLUS, history=253, lookback=252),
+        _spec("momentum_6_1", "momentum", "close[-21]/close[-126]-1", timeframes=DAILY_PLUS, history=127, lookback=126),
+        _spec("rate_of_change", "momentum", "close/close[-n]-1", bounds={"period": (5, 252)}),
+        _spec("risk_adjusted_momentum", "momentum", "ROC(n)/realized_vol(n)", bounds={"period": (20, 252)}),
+        _spec("relative_strength", "momentum", "asset_return-benchmark_return"),
+        _spec("benchmark_relative_momentum", "momentum", "MOM_asset-MOM_benchmark"),
+        _spec("sector_relative_momentum", "momentum", "MOM_asset-MOM_sector"),
+        _spec("multi_timeframe_momentum", "momentum", "weighted closed-candle MOM across registered timeframes"),
+        _spec("rsi", "momentum", "100-100/(1+EMA(gain)/EMA(loss))", bounds={"period": (2, 30)}),
+        _spec("stochastic_momentum", "momentum", "(close-low_n)/(high_n-low_n)", columns=("high", "low", "close"), bounds={"period": (5, 30)}),
+        _spec("macd", "momentum", "EMA_fast-EMA_slow; signal=EMA(macd,n)", bounds={"fast": (8, 20), "slow": (20, 40), "signal": (5, 15)}),
+        _spec("momentum_acceleration", "momentum", "MOM_short-MOM_long"),
+        _spec("momentum_deceleration", "momentum", "MOM_long-MOM_short"),
+        _spec("rsi_reversion", "mean_reversion", "RSI < threshold with positive regime", bounds={"period": (2, 20), "threshold": (5, 40)}, output="boolean"),
+        _spec("bollinger_reversion", "mean_reversion", "close < SMA-k*sigma with positive regime", bounds={"period": (10, 100), "sigma": (1, 3)}, output="boolean"),
+        _spec("zscore_reversion", "mean_reversion", "z(close,n) < threshold", bounds={"period": (10, 100), "threshold": (-3, -0.5)}, output="boolean"),
+        _spec("ema_pullback", "mean_reversion", "abs(close/EMA(n)-1) <= tolerance in positive trend", bounds={"period": (10, 100), "tolerance": (0.005, 0.15)}, output="boolean"),
+        _spec("distance_from_trend", "mean_reversion", "(close-MA)/ATR", columns=("high", "low", "close")),
+        _spec("trend_filtered_reversal", "mean_reversion", "short reversal AND positive long trend", output="boolean"),
+        _spec("gap_reversion", "mean_reversion", "open/previous_close-1 with structure gate", columns=("open", "close"), output="boolean"),
+        _spec("atr", "volatility", "EMA(true_range,n)", columns=("high", "low", "close"), bounds={"period": (5, 50)}),
+        _spec("realized_volatility", "volatility", "std(log_returns,n)*sqrt(periods_per_year)", bounds={"period": (20, 252)}),
+        _spec("volatility_percentile", "volatility", "percentile(realized_vol,current_history)"),
+        _spec("volatility_contraction", "volatility", "short_vol/long_vol < threshold", bounds={"short": (5, 40), "long": (40, 252), "threshold": (0.3, 0.9)}, output="boolean"),
+        _spec("volatility_expansion", "volatility", "short_vol/long_vol > threshold", output="boolean"),
+        _spec("bollinger_width", "volatility", "(upper-lower)/middle"),
+        _spec("squeeze", "volatility", "bollinger_width below historical percentile", output="boolean"),
+        _spec("volatility_adjusted_sizing", "sizing", "target_risk/realized_vol", output="weight"),
+        _spec("volatility_regime", "regime", "realized_vol percentile state", output="categorical"),
+        _spec("downside_volatility", "volatility", "std(min(return,0))*sqrt(periods_per_year)"),
+        _spec("average_dollar_volume", "liquidity", "mean(close*volume,n)", columns=("close", "volume")),
+        _spec("relative_volume", "volume", "volume/mean(volume,n)", columns=("volume",)),
+        _spec("volume_trend", "volume", "EMA(volume,fast)/EMA(volume,slow)-1", columns=("volume",)),
+        _spec("volume_confirmation", "volume", "volume > mean(volume,n)*multiplier", columns=("volume",), output="boolean"),
+        _spec("accumulation_distribution", "volume", "cumulative CLV*volume", columns=("high", "low", "close", "volume")),
+        _spec("on_balance_volume", "volume", "cumsum(sign(delta_close)*volume)", columns=("close", "volume")),
+        _spec("turnover", "liquidity", "volume/shares_outstanding", columns=("volume", "shares_outstanding")),
+        _spec("volume_breakout", "volume", "volume > max(volume[-n:-1])", columns=("volume",), output="boolean"),
+        _spec("illiquidity_penalty", "liquidity", "abs(return)/(close*volume)", columns=("close", "volume")),
+        _spec("earnings_yield", "fundamental", "net_income/market_cap", columns=("net_income", "market_cap"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("fcf_yield", "fundamental", "free_cash_flow/enterprise_value", columns=("free_cash_flow", "enterprise_value"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("roic", "fundamental", "NOPAT/invested_capital", columns=("nopat", "invested_capital"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("profitability", "fundamental", "net_income/assets", columns=("net_income", "assets"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("operating_margin", "fundamental", "operating_income/revenue", columns=("operating_income", "revenue"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("gross_profitability", "fundamental", "gross_profit/assets", columns=("gross_profit", "assets"), timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("balance_sheet_strength", "fundamental", "cash/assets - debt/assets", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("debt_burden", "fundamental", "interest_bearing_debt/market_cap", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("accruals", "fundamental", "(net_income-operating_cash_flow)/assets", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("dilution", "fundamental", "shares/shares_prior-1", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("dividend_quality", "fundamental", "sustainable dividend composite", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("earnings_stability", "fundamental", "inverse variability of PIT earnings", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("cash_flow_stability", "fundamental", "inverse variability of PIT cash flow", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("quality_composite", "fundamental", "weighted available PIT quality components", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("sales_yield", "valuation", "revenue/enterprise_value", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("shareholder_yield", "valuation", "dividend+buyback+debt_reduction yield", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("valuation_vs_sector", "valuation", "asset valuation minus sector median PIT", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("valuation_vs_history", "valuation", "current valuation percentile in own PIT history", timeframes=DAILY_PLUS, assets=("STOCK",)),
+        _spec("benchmark_trend", "regime", "benchmark close > benchmark MA", output="boolean"),
+        _spec("market_breadth", "regime", "share of eligible assets above MA"),
+        _spec("regional_relative_strength", "regime", "regional MOM-global MOM"),
+        _spec("sector_relative_strength", "regime", "sector MOM-market MOM"),
+        _spec("defensive_offensive_regime", "regime", "relative strength defensive vs offensive", output="categorical"),
+        _spec("fx_risk_regime", "regime", "base-currency FX trend and volatility", output="categorical"),
+        _spec("commodity_regime", "regime", "commodity benchmark trend and momentum", output="boolean"),
+        _spec("macro_growth_accelerating", "macro_regime", "PIT growth_score > configured positive threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_growth_slowing", "macro_regime", "PIT growth_score < configured negative threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_inflation_rising", "macro_regime", "PIT inflation_score indicates rising inflation pressure", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_inflation_falling", "macro_regime", "PIT inflation_score indicates falling inflation pressure", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_liquidity_expanding", "macro_regime", "PIT liquidity_score > configured positive threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_liquidity_contracting", "macro_regime", "PIT liquidity_score < configured negative threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_credit_improving", "macro_regime", "PIT credit_score > configured positive threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_credit_deteriorating", "macro_regime", "PIT credit_score < configured negative threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_breadth_improving", "macro_regime", "PIT breadth_score > configured positive threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_breadth_deteriorating", "macro_regime", "PIT breadth_score < configured negative threshold", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_risk_on", "macro_regime", "PIT market_regime == RISK_ON", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_risk_off", "macro_regime", "PIT market_regime == RISK_OFF", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_dollar_strengthening", "macro_regime", "PIT currency regime indicates USD strengthening", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_dollar_weakening", "macro_regime", "PIT currency regime indicates USD weakening", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_commodity_inflation", "macro_regime", "PIT commodity and inflation pressure jointly positive", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_defensive_regime", "macro_regime", "PIT growth slowing AND market risk-off", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("macro_cyclical_regime", "macro_regime", "PIT growth accelerating AND breadth improving", timeframes=DAILY_PLUS, output="boolean"),
+        _spec("confirmed_fractal_high", "structure", "high_i=max(high[i-l:i+r]); available at i+r", columns=("high",), output="price"),
+        _spec("confirmed_fractal_low", "structure", "low_i=min(low[i-l:i+r]); available at i+r", columns=("low",), output="price"),
+        _spec("confirmed_structure_breakout", "structure", "close > last confirmed fractal high", columns=("high", "close"), output="boolean"),
+        _spec("structure_retest", "structure", "low <= confirmed level <= close after breakout", columns=("high", "low", "close"), output="boolean"),
+        _spec("support_resistance", "structure", "clustered confirmed pivots", columns=("high", "low"), output="levels"),
+        _spec("trend_structure", "structure", "confirmed HH/HL or LH/LL sequence", columns=("high", "low"), output="categorical"),
+        _spec("distance_to_structural_stop", "structure", "(close-stop)/ATR", columns=("high", "low", "close")),
+        _spec("equal_weight_sizing", "sizing", "1/N subject to caps", output="weight"),
+        _spec("inverse_volatility_sizing", "sizing", "(1/sigma_i)/sum(1/sigma)", output="weight"),
+        _spec("atr_trailing_exit", "exit", "stop=max(previous_stop,close-k*ATR)", columns=("high", "low", "close"), output="boolean"),
+        _spec("moving_average_exit", "exit", "close < MA(n)", output="boolean"),
+        _spec("momentum_deterioration_exit", "exit", "MOM_short < threshold", output="boolean"),
+        _spec("time_stop", "exit", "holding_bars >= max_bars", output="boolean"),
+        _spec("ranking_exit", "exit", "rank > exit_rank", output="boolean"),
+        _spec("regime_exit", "exit", "regime gate false", output="boolean"),
+        _spec("rebalance_exit", "exit", "asset leaves selected rebalance set", output="boolean"),
+        _spec("fundamental_eligibility_exit", "exit", "PIT eligibility becomes false", output="boolean"),
+        _spec("portfolio_risk_exit", "exit", "portfolio drawdown circuit breaker", output="boolean"),
+        _spec("cash_residual", "sizing", "cash=1-sum(long weights)", output="weight"),
+    ]
+    result = {item.name: item for item in components}
+    if len(result) != len(components):
+        raise AssertionError("duplicate component name")
+    for item in result.values():
+        item.validate()
+    return result
+
+
+def component_registry_report() -> dict[str, Any]:
+    registry = component_registry()
+    counts = Counter(item.category for item in registry.values())
+    rows = [
+        {
+            **item.__dict__,
+            "required_fields": list(item.required_columns),
+            "supported_assets": list(item.asset_compatibility),
+            "available_at_rules": item.causality_rule,
+            "parameter_bounds": {
+                key: list(value) for key, value in item.parameter_bounds.items()
+            },
+        }
+        for item in sorted(registry.values(), key=lambda value: value.name)
+    ]
+    return {
+        "schema": "swing_strategy_component_registry_v1",
+        "status": "GO",
+        "component_count": len(rows),
+        "category_counts": dict(sorted(counts.items())),
+        "registry_hash": stable_hash(rows),
+        "components": rows,
+        "strategy_authority": "NONE",
+        "execution_authority": "NONE",
+        "broker_calls": 0,
+    }

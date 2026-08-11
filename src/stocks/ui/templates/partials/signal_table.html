@@ -1,0 +1,35 @@
+<div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>Rank</th><th>Symbol</th><th>Name</th><th>Type</th><th>Score</th>
+      <th>Action</th><th>Timeframes</th><th>Entry</th><th>Stop</th><th>Target 1</th><th>Target 2</th><th>Lifecycle</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+      {% set rows = viewmodel.top_signals if viewmodel.top_signals is defined else viewmodel.signals %}
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.rank }}</td>
+        <td>
+          <div class="symbol-actions">
+            <a class="symbol-link" href="/asset/{{ row.symbol }}">{{ row.symbol }}</a>
+            <button class="icon-link" type="button" data-chart-symbol="{{ row.symbol }}" title="Open cached chart"><i data-lucide="chart-candlestick"></i></button>
+          </div>
+        </td>
+        <td>{{ row.company_or_fund_name }}</td>
+        <td>{{ row.instrument_type }}</td>
+        <td>{{ '%.3f'|format(row.opportunity_score) }}</td>
+        <td>{{ 'BUY SETUP' if row.signal_status == 'ACTIONABLE' else 'WATCH' }}</td>
+        <td>{{ row.timeframe }}</td>
+        <td>{{ row.entry_zone_low }}–{{ row.entry_zone_high }}</td>
+        <td>{{ row.initial_stop }}</td>
+        <td>{{ row.target_1 }}</td>
+        <td>{{ row.target_2 or '—' }}</td>
+        <td><span class="status-tag {{ row.appearance_status|lower }}">{{ row.appearance_status or 'UNCLASSIFIED' }}</span></td>
+        <td><span class="status-tag {{ row.signal_status|lower }}">{{ row.signal_status }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="14" class="empty">No qualifying signals. Weak signals are not added to fill the table.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

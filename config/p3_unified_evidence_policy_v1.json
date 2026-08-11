@@ -1,0 +1,102 @@
+{
+  "schema": "p3_unified_evidence_policy_v1",
+  "version": "1.0.0",
+  "status": "FROZEN",
+  "strategy_identity": {
+    "required_fields": [
+      "economic_hypothesis",
+      "direction",
+      "universe_scope",
+      "entry_rule",
+      "exit_rule",
+      "stop_rule",
+      "target_rule",
+      "time_exit",
+      "entry_timeframe",
+      "setup_timeframe",
+      "context_timeframes",
+      "feature_set",
+      "parameters",
+      "regime_filter",
+      "position_management",
+      "cost_model_version",
+      "fill_model_version"
+    ],
+    "mutable_results_in_identity": false,
+    "missing_historical_fields_may_be_invented": false
+  },
+  "trial_accounting": {
+    "every_parameter_variant_counts": true,
+    "every_timeframe_variant_counts": true,
+    "every_regime_variant_counts": true,
+    "every_cost_variant_counts": true,
+    "every_ai_experiment_counts": true,
+    "rejected_trials_retained": true,
+    "researcher_reset_allowed": false,
+    "source_namespace_required": true,
+    "immutable_imports": true
+  },
+  "validation": {
+    "historical_oos_is_forward": false,
+    "nested_walk_forward_required": true,
+    "outer_oos_retuning_allowed": false,
+    "multiple_testing_methods": [
+      "DEFLATED_SHARPE_RATIO",
+      "CLASSICAL_CSCV_PBO",
+      "WHITE_REALITY_CHECK",
+      "HANSEN_SPA",
+      "BENJAMINI_HOCHBERG"
+    ],
+    "minimum_deflated_sharpe_probability": 0.95,
+    "maximum_pbo": 0.2,
+    "maximum_reality_check_p_value": 0.05,
+    "maximum_spa_p_value": 0.05,
+    "false_discovery_rate": 0.05,
+    "fixed_minimum_trade_count_grants_promotion": false,
+    "sample_sufficiency_requires_uncertainty_and_effect_size": true
+  },
+  "economics": {
+    "costs_required": [
+      "commission",
+      "spread",
+      "slippage",
+      "fx",
+      "market_impact"
+    ],
+    "whole_shares_required": true,
+    "cash_is_valid_outcome": true,
+    "automatic_gate_relaxation": false,
+    "zero_finalists_is_valid": true
+  },
+  "ai": {
+    "authority": "SHADOW_ADVISORY_ONLY",
+    "may_control_money": false,
+    "may_promote_itself": false,
+    "same_period_baseline_required": true,
+    "backfilled_forward_evidence_allowed": false
+  },
+  "live_execution": {
+    "single_broker_client": true,
+    "single_writer": true,
+    "single_portfolio_manager": true,
+    "single_risk_authority": true,
+    "delayed_or_synthetic_quote_may_satisfy_live_gate": false,
+    "natural_setup_required": true,
+    "all_financial_and_safety_gates_required": true,
+    "forced_trade_allowed": false,
+    "level_one_infrastructure_is_strategy_authority": false,
+    "level_two_automatic_activation_allowed": false
+  },
+  "operations": {
+    "atomic_artifacts_required": true,
+    "append_only_financial_evidence_required": true,
+    "monitoring_failure_may_grant_authority": false,
+    "runtime_modes": [
+      "SIGNALS_ONLY",
+      "PAPER_AUTOMATIC",
+      "LIVE_CANARY_AUTOMATIC",
+      "CONTROLLED_LIVE"
+    ],
+    "p3_publish_cadence_hours": 1
+  }
+}

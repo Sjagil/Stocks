@@ -1,0 +1,46 @@
+name: product-ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  brokerless-contracts:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install contract-test tools
+        run: python -m pip install pytest==8.4.2 ruff==0.15.22
+      - name: P3 unified evidence contracts
+        run: python -m pytest -q tests/test_p3_unified_evidence.py
+      - name: Static checks
+        run: python -m ruff check main.py src tests
+      - name: Compile
+        run: python -m compileall -q main.py src tests
+
+  official-native-ibapi-suite:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, Windows, X64, official-tws-api]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify official local API origin
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\TWS API\source\pythonclient')) {
+            throw 'Official local TWS Python API is missing.'
+          }
+          & .venv-ibkr\Scripts\python.exe -c "import importlib.metadata as m,json,pathlib; d=m.distribution('ibapi'); p=pathlib.Path(d._path)/'direct_url.json'; u=json.loads(p.read_text())['url']; assert u=='file:///C:/TWS%20API/source/pythonclient', u"
+      - name: Full product test suite
+        run: .venv-ibkr\Scripts\python.exe -m pytest -q tests
+      - name: Full static checks
+        run: .venv-ibkr\Scripts\python.exe -m ruff check main.py src tests

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+{% if viewmodel.status in ['BLOCKED', 'NOT_IN_UNIVERSE'] %}
+<div class="alert danger"><i data-lucide="circle-x"></i><div><strong>Asset analysis unavailable</strong><span>{{ viewmodel.status }} · {{ viewmodel.reason }}</span></div></div>
+{% else %}
+<div class="asset-header accent-{{ viewmodel.multi_timeframe.classification|lower }}">
+  <div>
+    <span class="eyebrow">{{ viewmodel.metadata.instrument_type }} · {{ viewmodel.metadata.region }} · {{ viewmodel.metadata.sector }}</span>
+    <h2>{{ viewmodel.symbol }} · {{ viewmodel.metadata.name }}</h2>
+    <p>{{ viewmodel.multi_timeframe.classification }} · analysis {{ viewmodel.status }} · no execution authority</p>
+  </div>
+  <div class="score-dial" style="--score: {{ ((viewmodel.multi_timeframe.score or 0) + 1) / 2 }}">
+    <strong>{{ '%.2f'|format(viewmodel.multi_timeframe.score or 0) }}</strong><span>MTF score</span>
+  </div>
+</div>
+
+<div class="metric-grid compact">
+  {% for label, value, sub in [
+    ('Current price', viewmodel.current_market.price or '—', viewmodel.current_market.provider or 'no fresh reference'),
+    ('Price gate', viewmodel.current_market.state|replace('_',' '), ((viewmodel.current_market.age_minutes|string) ~ ' min old') if viewmodel.current_market.age_minutes is not none else 'unavailable'),
+    ('Available TFs', viewmodel.analysis_coverage.available_timeframe_count ~ '/6', viewmodel.analysis_coverage.available_timeframes|join(', ')),
+    ('Alignment', '%.0f%%'|format((viewmodel.multi_timeframe.alignment_ratio or 0) * 100), viewmodel.multi_timeframe.classification),
+    ('Stale TFs', viewmodel.analysis_coverage.stale_timeframe_count, 'freshness gate'),
+    ('Portfolio rank', viewmodel.portfolio_context.status, viewmodel.portfolio_context.opportunity_score),
+    ('Research allocation', viewmodel.portfolio_context.research_allocation_eligible, 'advisory'),
+    ('Execution', viewmodel.decision.execution_authority, viewmodel.decision.recommended_action|replace('_',' '))
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong>{{ value }}</strong><small>{{ sub }}</small></article>
+  {% endfor %}
+</div>
+{% set plan = viewmodel.decision.model_order_plan %}
+<section class="panel decision-panel">
+  <div class="panel-header"><div><h2>Model Verdict & Order Draft</h2><p>{{ viewmodel.decision.recommended_action|replace('_',' ') }}</p></div><span class="status-tag {{ 'actionable' if plan.model_action == 'BUY_SETUP' else 'watch' }}">{{ plan.model_action|replace('_',' ') }}</span></div>
+  {% if viewmodel.decision.reason_codes %}<div class="tag-list compact-tags">{% for reason in viewmodel.decision.reason_codes[:10] %}<span>{{ reason|replace('_',' ') }}</span>{% endfor %}</div>{% endif %}
+  <div class="definition-grid compact-definitions">
+    <div><span>Side</span><strong>{{ plan.side or '—' }}</strong></div>
+    <div><span>Quantity</span><strong>{{ plan.quantity or '—' }}</strong></div>
+    <div><span>Limit</span><strong>{{ plan.limit_price or '—' }}</strong></div>
+    <div><span>Entry zone</span><strong>{{ plan.entry_zone_low or '—' }}{% if plan.entry_zone_high %}–{{ plan.entry_zone_high }}{% endif %}</strong></div>
+    <div><span>Protective stop</span><strong>{{ plan.protective_stop or '—' }}</strong></div>
+    <div><span>Target 1</span><strong>{{ plan.target_1 or '—' }}</strong></div>
+    <div><span>Target 2</span><strong>{{ plan.target_2 or '—' }}</strong></div>
+    <div><span>Order state</span><strong>{{ plan.status|replace('_',' ') }}</strong></div>
+  </div>
+</section>
+
+<section class="panel chart-panel">
+  <div class="panel-header">
+    <div><h2 id="chart-title">{{ viewmodel.symbol }} · cached validated bars</h2><p>Closed bars only</p></div>
+    <div class="segmented">
+      {% for timeframe in ['1h','2h','4h','1d','1w','1mo'] %}
+      <button type="button" data-interval="{{ timeframe }}" class="{{ 'active' if timeframe == '1d' else '' }}">{{ timeframe }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div id="price-chart" data-initial-symbol="{{ viewmodel.symbol }}"></div>
+</section>
+
+<section class="panel">
+  <div class="panel-header"><div><h2>Multi-timeframe Indicator Matrix</h2><p>Trend, momentum, breakout, volume/flow and mean reversion</p></div></div>
+  <div class="timeframe-analysis-grid">
+    {% for row in viewmodel.multi_timeframe.timeframes %}
+    <article class="analysis-card signal-{{ row.signal|lower }}">
+      <header><span>{{ row.interval }}</span><strong>{{ row.signal }}</strong></header>
+      {% if row.status == 'GO' %}
+      <div class="score-bar"><i style="--signal-score: {{ ((row.score or 0) + 1) / 2 }}"></i></div>
+      <dl>
+        <div><dt>Score</dt><dd>{{ row.score }}</dd></div><div><dt>RSI 14</dt><dd>{{ row.rsi_14 }}</dd></div>
+        <div><dt>ADX 14</dt><dd>{{ row.adx_14 }}</dd></div><div><dt>ATR</dt><dd>{{ '%.2f%%'|format(row.atr_pct * 100) }}</dd></div>
+        <div><dt>20-bar return</dt><dd>{{ '%.2f%%'|format(row.return_20_bars * 100) }}</dd></div><div><dt>Volatility</dt><dd>{{ '%.1f%%'|format(row.annualized_volatility * 100) }}</dd></div>
+        <div><dt>Volume ratio</dt><dd>{{ row.volume_ratio_20 }}</dd></div><div><dt>CMF</dt><dd>{{ row.cmf_20 }}</dd></div>
+      </dl>
+      <small>{{ row.provider }} · {{ row.bar_origin }} · {{ row.freshness_status }} · {{ row.bar_count }} bars</small>
+      {% else %}<p class="empty">{{ row.status }}</p>{% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Asset News Context</h2><p>{{ viewmodel.news.status }} · {{ viewmodel.news.matched_count }} matched</p></div></div>
+    <ol class="news-list expanded">
+      {% for row in viewmodel.news['items'] %}
+      <li><span class="sentiment-dot {{ 'positive' if 'POSITIVE' in row.direction else 'negative' if 'NEGATIVE' in row.direction else 'neutral' }}"></span><div>
+        <a href="{{ row.external_search_url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>
+        <small>{{ row.source }} · {{ row.published_at }} · {{ row.importance }}</small>
+      </div></li>
+      {% else %}<li class="empty">No high-importance item matched this ticker.</li>{% endfor %}
+    </ol>
+  </section>
+  <aside class="panel">
+    <div class="panel-header"><div><h2>External Research</h2><p>Operator links; no scraped claim</p></div></div>
+    <div class="link-stack">
+      {% for row in viewmodel.external_research_links %}
+      <a href="{{ row.url }}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i>{{ row.label }}</a>
+      {% endfor %}
+    </div>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

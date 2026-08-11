@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+{% set ibkr_status_label = 'Available' if viewmodel.ibkr_news.status.startswith('AVAILABLE') else viewmodel.ibkr_news.status|replace('_', ' ')|title %}
+{% set ibkr_status_detail = 'No current headlines' if viewmodel.ibkr_news.status == 'AVAILABLE_NO_CURRENT_HEADLINES' else viewmodel.ibkr_news.historical_headlines_capability|replace('_', ' ')|lower %}
+{% set ml_status_label = 'Insufficient causal labels for ML' if viewmodel.event_study.model_readiness.status == 'NOT_TRAINED_INSUFFICIENT_CAUSAL_CAR_LABELS' else viewmodel.event_study.model_readiness.status|replace('_', ' ')|title %}
+<div class="alert info">
+  <i data-lucide="newspaper"></i>
+  <div><strong>News is context, never standalone authority</strong><span>{{ viewmodel.freshness_status }} · external links open provider/search pages · automatic execution false</span></div>
+</div>
+<div class="metric-grid compact">
+  {% for label, value, sub in [
+    ('Important items', viewmodel.important_news_count, viewmodel.freshness_status),
+    ('Sectors', viewmodel.sector_industry_coverage.sector_count, viewmodel.sector_industry_coverage.status),
+    ('Industries', viewmodel.sector_industry_coverage.industry_count, 'all classified groups'),
+    ('Fundamentals', ((viewmodel.sector_industry_coverage.fundamental_coverage_ratio or 0) * 100)|round(1)|string + '%', 'signal-eligible stocks'),
+    ('IBKR News', ibkr_status_label, ibkr_status_detail),
+    ('Event risk 24h', viewmodel.event_risk_within_24h, 'macro calendar'),
+    ('Material stories', viewmodel.event_intelligence.material_event_count, 'deterministic multi-label baseline v1'),
+    ('Causal CAR labels', viewmodel.event_study.causal_label_count, ml_status_label),
+    ('Descriptive labels', viewmodel.event_study.descriptive_label_count, 'published-at · not training eligible')
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong class="{{ 'compact-value' if (value|string|length) > 12 else '' }}">{{ value }}</strong><small>{{ sub }}</small></article>
+  {% endfor %}
+</div>
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Structured Event Intelligence</h2><p>{{ viewmodel.event_intelligence.status }} · ranking and risk context only</p></div></div>
+    <ol class="news-list expanded">
+      {% for row in viewmodel.material_events %}
+      <li>
+        <span class="sentiment-dot {{ 'positive' if row.sentiment_score > 0.1 else 'negative' if row.sentiment_score < -0.1 else 'neutral' }}"></span>
+        <div>
+          <strong>{{ row.title }}</strong>
+          <small>{{ row.published_at }} · materiality {{ row.materiality }} · {{ row.independent_source_count }} source(s)</small>
+          <div class="tag-row">
+            {% for event_class in row.event_classes %}<span class="tf-pill">{{ event_class }}</span>{% endfor %}
+            {% for symbol in row.symbols %}<a href="/asset/{{ symbol }}" class="tf-pill">{{ symbol }}</a>{% endfor %}
+          </div>
+        </div>
+      </li>
+      {% else %}<li class="empty">No normalized material events available.</li>{% endfor %}
+    </ol>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Event Study Evidence</h2><p>{{ viewmodel.event_study.status }} · received-at labels are the only causal training rows</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Horizon</th><th>Labels</th><th>Median CAR</th><th>Positive</th><th>Direction</th></tr></thead><tbody>
+      {% for row in viewmodel.event_study.horizons %}<tr><td><strong>{{ row.horizon }}</strong></td><td>{{ row.label_count }}</td><td>{{ (row.median_car * 100)|round(2) }}%</td><td>{{ (row.positive_car_ratio * 100)|round(1) }}%</td><td>{{ ((row.directional_accuracy or 0) * 100)|round(1) }}%</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No closed CAR labels yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="alert info">
+      <i data-lucide="shield-check"></i>
+      <div><strong>{{ ml_status_label }}</strong><span>{{ viewmodel.event_study.causal_label_count }} causal labels · {{ viewmodel.event_study.pending_label_count }} pending/unavailable · standalone authority false</span></div>
+    </div>
+  </section>
+</div>
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Sector Intelligence</h2><p>Opportunity, fresh news and point-in-time fundamental coverage</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Sector</th><th>Status</th><th>Score</th><th>News</th><th>Fundamentals</th></tr></thead><tbody>
+      {% for row in viewmodel.top_sectors %}<tr><td><strong>{{ row.sector }}</strong></td><td>{{ row.analysis_status }}</td><td>{{ row.maximum_opportunity_score }}</td><td>{{ row.fresh_news_event_count }}</td><td>{{ (row.fundamental_coverage_ratio * 100)|round(1) }}%</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No sector analysis available.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>Industry Intelligence</h2><p>Highest current opportunity groups with explicit coverage</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Industry</th><th>Status</th><th>Score</th><th>News</th><th>Fundamentals</th></tr></thead><tbody>
+      {% for row in viewmodel.top_industries %}<tr><td><strong>{{ row.industry }}</strong></td><td>{{ row.analysis_status }}</td><td>{{ row.maximum_opportunity_score }}</td><td>{{ row.fresh_news_event_count }}</td><td>{{ (row.fundamental_coverage_ratio * 100)|round(1) }}%</td></tr>
+      {% else %}<tr><td colspan="5" class="empty">No industry analysis available.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+<div class="split-layout">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Important Market News</h2><p>Deterministic relevance and sentiment inference</p></div></div>
+    <ol class="news-list expanded">
+      {% for row in viewmodel.important_news %}
+      <li>
+        <span class="sentiment-dot {{ 'positive' if 'POSITIVE' in row.direction else 'negative' if 'NEGATIVE' in row.direction else 'neutral' }}"></span>
+        <div>
+          <a href="{{ row.external_search_url }}" target="_blank" rel="noopener noreferrer">{{ row.title }}</a>
+          <small>{{ row.source }} · {{ row.published_at }} · {{ row.importance }} · {{ row.direction }}</small>
+          <div class="tag-row">{% for symbol in row.symbols %}<a href="/asset/{{ symbol }}" class="tf-pill">{{ symbol }}</a>{% endfor %}</div>
+        </div>
+      </li>
+      {% else %}<li class="empty">No current important news.</li>{% endfor %}
+    </ol>
+  </section>
+  <aside class="panel">
+    <div class="panel-header"><div><h2>Upcoming Macro Events</h2><p>Official calendar links where available</p></div></div>
+    <ol class="news-list expanded">
+      {% for row in viewmodel.upcoming_macro_events %}
+      <li><i data-lucide="calendar-clock"></i><div>
+        {% if row.source_url %}<a href="{{ row.source_url }}" target="_blank" rel="noopener noreferrer">{{ row.name }}</a>{% else %}<strong>{{ row.name }}</strong>{% endif %}
+        <small>{{ row.scheduled_at }} · {{ row.importance }} · {{ row.affected_markets|join(', ') }}</small>
+      </div></li>
+      {% else %}<li class="empty">No upcoming high-impact events.</li>{% endfor %}
+    </ol>
+  </aside>
+</div>
+{% endblock %}

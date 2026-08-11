@@ -1,0 +1,7 @@
+# Phase 11.3 Status
+
+- Status: `PHASE11_3_DATA_EVIDENCE_INCOMPLETE`
+- Integration: `PHASE11_3_DATASCRAPER_INTEGRATION_GO`
+- Price rows: `1011903`
+- Open blockers: `SHARIAH_HISTORY_INCOMPLETE, NEWS_ARCHIVE_PARTIAL`
+- Execution authority: `NONE`

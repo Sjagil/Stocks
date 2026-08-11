@@ -1,0 +1,17 @@
+{
+  "contract_id": "STOCKS_SWING_MULTITIMEFRAME_DATA_V2",
+  "status": "ACTIVE",
+  "canonical_intervals": ["1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo"],
+  "forbidden_intervals": ["1min", "5m", "15m", "30m", "tick", "ticks"],
+  "derivation_paths": {
+    "1h": ["2h", "4h", "6h", "12h"],
+    "1d": ["1w", "1mo"]
+  },
+  "closed_bars_only": true,
+  "higher_timeframe_mapping": "ASOF_BACKWARD_ON_BAR_CLOSE_UTC",
+  "no_upsampling": true,
+  "no_synthetic_intraday": true,
+  "legacy_5m_15m_partitions": "QUARANTINED_READ_NEVER_RESEARCH_NEVER",
+  "strategy_authority": "NONE",
+  "execution_authority": "NONE"
+}

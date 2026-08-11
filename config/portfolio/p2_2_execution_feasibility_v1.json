@@ -1,0 +1,51 @@
+{
+  "schema": "p2_2_execution_feasibility_policy_v1",
+  "version": 1,
+  "capital_level": 1,
+  "risk_budget": {
+    "risk_fraction_of_equity": 0.005,
+    "absolute_cap_eur": 9,
+    "semantics": "MAXIMUM_LOSS_TO_PROTECTIVE_STOP",
+    "whole_share_rounding": "FLOOR"
+  },
+  "notional": {
+    "active_hard_cap_eur": 250,
+    "sensitivity_caps_eur": [250, 275, 300, 350],
+    "automatic_policy_change": false
+  },
+  "economics": {
+    "minimum_expected_net_edge_eur": 0,
+    "maximum_cost_to_expected_edge_ratio": 0.5,
+    "round_trip_costs": true
+  },
+  "constraints": {
+    "whole_shares_only": true,
+    "fractional_shares_allowed": false,
+    "cash_secured": true,
+    "long_only": true,
+    "margin_enabled": false,
+    "leverage_enabled": false,
+    "shorting_enabled": false,
+    "options_enabled": false,
+    "futures_enabled": false,
+    "maximum_positions": 1,
+    "maximum_new_orders_per_day": 1
+  },
+  "learning_authority": {
+    "supervised": "SHADOW_ONLY",
+    "tcn": "SHADOW_ONLY",
+    "unsupervised": "CONTEXT_ONLY",
+    "reinforcement_learning": "SHADOW_ONLY",
+    "may_grant_strategy_authority": false,
+    "may_increase_quantity": false,
+    "automatic_model_promotion": false
+  },
+  "live_requirements": {
+    "exact_strategy_binding": true,
+    "shariah_allowed": true,
+    "fresh_realtime_level_one_quote": true,
+    "fresh_reconciliation": true,
+    "protective_stop_required": true,
+    "natural_signal_required": true
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schema": "stocks_operations_profile_v1",
+  "profile_id": "autonomous_multi_asset_v1",
+  "version": 1,
+  "execution_mode": "CONTROLLED_LIVE",
+  "description": "One-time activated, fail-closed multi-asset swing runtime at Level 1.",
+  "primary_timeframes": [
+    "1h",
+    "4h",
+    "1d",
+    "1w"
+  ],
+  "sleeves": [
+    "STOCKS",
+    "EQUITY_ETFS",
+    "BOND_ETFS",
+    "COMMODITY_ETFS",
+    "DEFENSIVE"
+  ],
+  "authority": {
+    "initial_operator_activation_required": true,
+    "capability_ttl_seconds": 900,
+    "per_order_approval_required": false,
+    "automatic_capital_promotion": false
+  },
+  "level_one_limits": {
+    "max_order_value_eur": 10,
+    "max_total_live_exposure_eur": 25,
+    "max_open_live_positions": 1,
+    "max_new_live_orders_per_day": 1,
+    "max_live_loss_per_day_eur": 5,
+    "max_strategy_allocation_pct": 0.01,
+    "autoscaling": false
+  },
+  "constraints": {
+    "long_only": true,
+    "cash_secured": true,
+    "whole_shares_only": true,
+    "margin_enabled": false,
+    "leverage_enabled": false,
+    "shorting_enabled": false,
+    "options_enabled": false,
+    "futures_enabled": false,
+    "forex_speculation_enabled": false
+  },
+  "runtime": {
+    "continuous": true,
+    "resume_after_restart": true,
+    "single_instance_required": true,
+    "reconcile_before_orders": true,
+    "risk_reductions_before_entries": true,
+    "normal_cycle_seconds": 60
+  }
+}

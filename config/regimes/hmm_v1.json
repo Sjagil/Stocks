@@ -1,0 +1,86 @@
+{
+  "schema": "hmm_regime_configuration_v1",
+  "version": "1.1.0",
+  "model": {
+    "regime_counts": [3],
+    "search_reps": 5,
+    "production_search_reps": 20,
+    "max_iterations": 200,
+    "minimum_state_observation_fraction": 0.05,
+    "minimum_expected_duration_bars": 5.0,
+    "maximum_single_bar_chatter_ratio": 0.15,
+    "variance_floor": 1e-08,
+    "training_window_bars": {
+      "1h": 3000,
+      "4h": 1000,
+      "1d": 1260,
+      "1w": 520,
+      "1mo": 180
+    }
+  },
+  "timeframes": {
+    "1h": {"feature_set": "SHORT_TERM", "refit": "MONTHLY"},
+    "4h": {"feature_set": "SHORT_TERM", "refit": "MONTHLY"},
+    "1d": {"feature_set": "DAILY_CROSS_ASSET_MACRO", "refit": "MONTHLY"},
+    "1w": {"feature_set": "DAILY_CROSS_ASSET_MACRO", "refit": "QUARTERLY"},
+    "1mo": {"feature_set": "DAILY_CROSS_ASSET_MACRO", "refit": "ANNUALLY"}
+  },
+  "states": {
+    "RISK_ON_TREND": {"multiplier": 1.0},
+    "NEUTRAL_CHOPPY": {"multiplier": 0.6},
+    "STRESS_HIGH_VOL": {"multiplier": 0.15},
+    "INFLATION_RATE_SHOCK": {"multiplier": 0.35}
+  },
+  "hysteresis": {
+    "activation_threshold": 0.75,
+    "deactivation_threshold": 0.3,
+    "minimum_confirmations": 2
+  },
+  "risk_bounds": {
+    "minimum_exposure_multiplier": 0.0,
+    "maximum_exposure_multiplier": 1.0,
+    "entry_block_below_multiplier": 0.2,
+    "absolute_rebalance_buffer": 0.05
+  },
+  "rotation": {
+    "RISK_ON_TREND": {
+      "GROWTH": 1.0,
+      "DEFENSIVE": 0.75,
+      "COMMODITY": 0.75,
+      "CASH": 0.0
+    },
+    "NEUTRAL_CHOPPY": {
+      "GROWTH": 0.6,
+      "DEFENSIVE": 0.9,
+      "COMMODITY": 0.7,
+      "CASH": 0.25
+    },
+    "STRESS_HIGH_VOL": {
+      "GROWTH": 0.1,
+      "DEFENSIVE": 0.65,
+      "COMMODITY": 0.35,
+      "CASH": 0.8
+    },
+    "INFLATION_RATE_SHOCK": {
+      "GROWTH": 0.25,
+      "DEFENSIVE": 0.35,
+      "COMMODITY": 1.0,
+      "CASH": 0.45
+    }
+  },
+  "promotion": {
+    "minimum_fold_count": 10,
+    "minimum_baseline_median_pf": 1.0,
+    "minimum_hmm_median_pf": 1.0,
+    "minimum_hmm_positive_fold_ratio": 0.6,
+    "minimum_sharpe_ablation_ratio": 1.15,
+    "minimum_drawdown_reduction_fraction": 0.2,
+    "minimum_cost_50bps_pf": 1.0,
+    "minimum_incremental_fold_ratio": 0.6
+  },
+  "authority": {
+    "strategy_authority": "NONE",
+    "execution_authority": "NONE",
+    "automatic_promotion": false
+  }
+}

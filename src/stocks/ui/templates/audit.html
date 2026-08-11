@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="alert info"><i data-lucide="lock-keyhole"></i><div><strong>Sanitized audit view</strong><span>Secrets, raw account identifiers and credentials are removed by key policy.</span></div></div>
+{% for record in viewmodel.records %}
+<section class="panel">
+  <div class="panel-header"><div><h2>{{ record.artifact }}</h2><p>{{ record.modified_at }}</p></div></div>
+  <pre class="json-view">{{ record.payload|tojson(indent=2) }}</pre>
+</section>
+{% endfor %}
+{% endblock %}

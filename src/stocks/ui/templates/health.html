@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metric-grid compact">
+  {% for label, value, sub in [
+    ('Runtime', viewmodel.runtime.runtime_status, viewmodel.runtime.last_heartbeat),
+    ('IBKR', viewmodel.runtime.IBKR_status, viewmodel.live.broker_connection),
+    ('Live state', viewmodel.live.runtime_state, viewmodel.live.account_reconciliation),
+    ('Phase 9', viewmodel.phase9.status, viewmodel.phase9.phase9_marker),
+    ('Telegram', viewmodel.telegram.status, 'sanitized'),
+    ('UI mode', 'READ ONLY', 'localhost')
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong>{{ value }}</strong><small>{{ sub }}</small></article>
+  {% endfor %}
+</div>
+<div class="split-layout equal">
+  <section class="panel"><div class="panel-header"><div><h2>Data Providers</h2><p>Qualified local inventory</p></div></div><pre class="json-view">{{ viewmodel.data_sources|tojson(indent=2) }}</pre></section>
+  <section class="panel"><div class="panel-header"><div><h2>Live Safety Gates</h2><p>Connection and authority</p></div></div><pre class="json-view">{{ viewmodel.live|tojson(indent=2) }}</pre></section>
+</div>
+{% endblock %}

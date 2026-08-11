@@ -1,0 +1,69 @@
+{
+  "schema": "production_quant_portfolio_orchestrator_policy_v1",
+  "version": 1,
+  "default_mode": "AUTONOMOUS_DRY_RUN",
+  "desired_normal_mode": "AUTONOMOUS_BOUNDED",
+  "broker_writes_in_dry_run": 0,
+  "per_trade_approval_in_autonomous_bounded": false,
+  "separate_safe_activation_required": true,
+  "automatic_capital_promotion": false,
+  "constraints": {
+    "long_only": true,
+    "cash_secured": true,
+    "whole_shares_only": true,
+    "fractional_shares_allowed": false,
+    "margin_enabled": false,
+    "leverage_enabled": false,
+    "shorting_enabled": false,
+    "options_enabled": false,
+    "futures_enabled": false
+  },
+  "economics": {
+    "minimum_expected_net_return": 0.0,
+    "minimum_expected_r": 0.0,
+    "maximum_cost_to_expected_edge_ratio": 0.5,
+    "rotation_hurdle_net_return": 0.02
+  },
+  "rebalance": {
+    "minimum_notional_eur": 5.0,
+    "minimum_weight_drift": 0.005,
+    "maximum_cycle_turnover": 0.25,
+    "risk_reductions_before_entries": true,
+    "hysteresis_required": true
+  },
+  "risk": {
+    "maximum_event_risk": 0.75,
+    "cash_is_valid_allocation": true,
+    "automatic_risk_reduction": true,
+    "automatic_risk_increase": false,
+    "etf_lookthrough_required": true,
+    "cluster_risk_required": true
+  },
+  "runtime": {
+    "normal_cycle_seconds": 60,
+    "reconcile_before_decision": true,
+    "single_instance_required": true,
+    "resume_from_checkpoint": true,
+    "journal_every_cycle": true
+  },
+  "final_entry_gates": [
+    "BROKER_CONNECTED",
+    "ACCOUNT_FRESH",
+    "CASH_FRESH",
+    "RECONCILIATION_GO",
+    "WRITER_INTEGRITY_GO",
+    "STRATEGY_LIVE_AUTHORIZED",
+    "SHARIAH_ALLOWED",
+    "SIGNAL_FRESH",
+    "MARKET_DATA_FRESH",
+    "PORTFOLIO_RISK_GO",
+    "CORRELATION_GO",
+    "CONCENTRATION_GO",
+    "LIQUIDITY_GO",
+    "TCA_GO",
+    "EXPECTED_NET_EDGE_GO",
+    "EVENT_RISK_GO",
+    "DAILY_LOSS_GO",
+    "DRAWDOWN_GO"
+  ]
+}

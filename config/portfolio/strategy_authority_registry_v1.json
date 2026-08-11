@@ -1,0 +1,43 @@
+{
+  "schema": "portfolio_strategy_authority_registry_v1",
+  "version": 1,
+  "authority_mode": "EXACT_FROZEN_PIT_STRATEGY_BINDING",
+  "operational_allowlist_hash": "D27145AB147D2E8651C82F7BAE44CFFB891E863792B8DCCA41441E05B300ED9C",
+  "qualification_hash": "DB6DDD758DDB73372216770A0DD238942ECD59DA5489F4C99EA2191CE62DB6A4",
+  "risk_policy": {
+    "maximum_position_weight": "0.15",
+    "canary_notional_hard_cap_eur": "250",
+    "primary_sizing_authority": "RISK_PER_WHOLE_SHARE",
+    "maximum_daily_orders": 1,
+    "maximum_daily_loss_eur": "5",
+    "whole_share_only": true,
+    "automatic_capital_promotion": false
+  },
+  "strategies": [
+    {
+      "strategy_id": "WEEKLY_CROSS_SECTIONAL_MOMENTUM",
+      "version": "PHASE11_13_V1",
+      "source_hash": "A07B2E1A9DE52AC302D38DEA4B4B328C64074E71ECBD2517C27E65270C3BE97F",
+      "parameter_hash": "3ADCDCE47ADA8626D9247E5698C97F5ACC3F065E0D638B70F94259184BCD7E56",
+      "qualification_hash": "6da6c454dd13028f8274d8a66691109794977312738bafc1ea1d7aaf45cac844",
+      "allowed_timeframes": ["1w"],
+      "allowed_asset_classes": ["STK"],
+      "allowed_symbols": ["AAPL"],
+      "deployment_status": "LIVE_AUTHORIZED_LEVEL_ONE"
+    },
+    {
+      "strategy_id": "P1114-8D2EA9C81DC8D926DD44",
+      "version": "PHASE11_14_V1",
+      "source_hash": "5A0DC6BD000851E7A6C1461A62F8A6E34E832D6FDCFD62E0B3EE99E200DE2215",
+      "parameter_hash": "0F3AAD2CDB842C6EB7E8D1C4DCB948C3C923CFAB9AD1332E1669E871649BC2E1",
+      "qualification_hash": "50F1FD757723615C5C2C176641CEA396FF2507D19F841C1B129A442ADC54D590",
+      "allowed_timeframes": ["1d"],
+      "allowed_asset_classes": ["STK"],
+      "allowed_symbols": ["NVDA"],
+      "deployment_status": "LIVE_AUTHORIZED_LEVEL_ONE"
+    }
+  ],
+  "research_only_policy": "PRESERVE_DESIRED_TARGET_BUT_EXCLUDE_FROM_AUTHORITY_EXECUTABLE_PORTFOLIO",
+  "ambiguity_policy": "FAIL_CLOSED_UNLESS_EXACTLY_ONE_CONTRIBUTING_STRATEGY_IS_AUTHORIZED",
+  "capability_34_added": false
+}

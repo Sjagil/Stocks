@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="metric-grid compact">
+  {% for label, value in [
+    ('Registered DNA', viewmodel.registered_strategy_count),
+    ('Standard strategies', viewmodel.standard_strategy_count),
+    ('Nested validated', viewmodel.validated_strategy_count),
+    ('Research pass', viewmodel.research_pass_count),
+    ('Robust pass', viewmodel.robust_pass_count),
+    ('Financial finalists', viewmodel.financial_finalist_count)
+  ] %}
+  <article class="metric"><span>{{ label }}</span><strong>{{ "{:,}".format(value) }}</strong></article>
+  {% endfor %}
+</div>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Forward Observer Tiers</h2><p>Closed-bar monitoring · exploratory observers cannot allocate capital or create orders</p></div>
+    <span class="status-tag persistent">{{ viewmodel.forward_observer_count }} observed · {{ viewmodel.exploratory_forward_observer_count }} exploratory</span>
+  </div>
+  <div class="signal-rotation-strip">
+    <div><span>Observers</span><strong>{{ viewmodel.forward_observer_count }}</strong></div>
+    <div><span>Exploratory</span><strong>{{ viewmodel.exploratory_forward_observer_count }}</strong></div>
+    <div><span>Current raw signals</span><strong>{{ viewmodel.forward_observer_active_signal_count }}</strong></div>
+    <div><span>Execution authority</span><strong>NONE</strong></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>Tier</th><th>Formula</th><th>TF</th><th>Asset class</th><th>Closed bar</th><th>Freshness</th><th>Raw signals</th><th>Symbols</th><th>Allocation</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.forward_observers %}
+      <tr>
+        <td><strong>{{ row.strategy_id }}</strong></td>
+        <td><span class="status-tag {{ 'persistent' if row.observer_tier == 'ROBUST_FORWARD_OBSERVER' else 'watch' }}">{{ row.observer_tier|replace('_', ' ') }}</span></td>
+        <td>{{ row.formula|replace('_', ' ') }}</td>
+        <td><span class="tf-pill">{{ row.timeframe }}</span></td>
+        <td>{{ row.asset_class|replace('_', ' ') }}</td>
+        <td>{{ row.closed_bar_timestamp or '—' }}</td>
+        <td>{{ row.freshness|replace('_', ' ') }}</td>
+        <td>{{ row.active_signal_count }}</td>
+        <td>{{ row.active_symbols|join(', ') or '—' }}</td>
+        <td>{{ row.portfolio_action|replace('_', ' ') }}</td>
+      </tr>
+      {% else %}<tr><td colspan="10" class="empty">No forward observers are available.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">Exploratory means economically interesting but not robust enough for allocation. It remains authority NONE while new forward evidence accumulates.</p>
+</section>
+{% set monitor = viewmodel.strategy_monitoring %}
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Operational Strategy Monitor</h2><p>{{ monitor.current_regime|replace('_', ' ') }} · lifecycle, current regime fit and rolling OOS performance · authority NONE</p></div>
+    <span class="status-tag {{ 'actionable' if monitor.status == 'GO' else 'persistent' }}">{{ monitor.strategy_count }} monitored</span>
+  </div>
+  <div class="signal-rotation-strip">
+    {% for label in ['ACTIVE', 'PAPER', 'SHADOW', 'PAUSED', 'RESEARCH'] %}
+    <div><span>{{ label|title }}</span><strong>{{ monitor.counts.get(label, 0) }}</strong></div>
+    {% endfor %}
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>State</th><th>Family / TF</th><th>Weight</th><th>PF</th><th>Expectancy</th><th>Drawdown</th><th>Regime fit</th><th>Rolling return</th><th>Rolling period PF</th><th>Rolling Sharpe</th><th>Rolling DD</th><th>Rolling through</th></tr></thead>
+      <tbody>
+      {% for row in monitor.rows %}
+      <tr>
+        <td><strong>{{ row.strategy_id }}</strong><small class="table-sub">{{ row.classification|replace('_', ' ') }}</small></td>
+        <td><span class="status-tag {{ 'actionable' if row.lifecycle == 'ACTIVE' else 'persistent' if row.lifecycle == 'SHADOW' else 'watch' }}">{{ row.lifecycle }}</span></td>
+        <td>{{ (row.family or '—')|replace('_', ' ') }}<small class="table-sub">{{ row.timeframe or '—' }}</small></td>
+        <td>{{ ('%.1f%%'|format(row.weight * 100)) if row.weight is not none else '—' }}</td>
+        <td>{{ ('%.3f'|format(row.profit_factor)) if row.profit_factor is not none else '—' }}</td>
+        <td>{{ ('%.3f%%'|format(row.expectancy * 100)) if row.expectancy is not none else '—' }}</td>
+        <td>{{ ('%.1f%%'|format(row.maximum_drawdown * 100)) if row.maximum_drawdown is not none else '—' }}</td>
+        <td>{{ ('%.0f%%'|format(row.regime_fit * 100)) if row.regime_fit is not none else '—' }}<small class="table-sub">{{ row.regime_fit_status|replace('_', ' ') }}</small></td>
+        <td>{{ ('%.2f%%'|format(row.rolling.return * 100)) if row.rolling.return is not none else '—' }}</td>
+        <td>{{ ('%.3f'|format(row.rolling.period_profit_factor)) if row.rolling.period_profit_factor is not none else '—' }}</td>
+        <td>{{ ('%.2f'|format(row.rolling.annualized_sharpe)) if row.rolling.annualized_sharpe is not none else '—' }}</td>
+        <td>{{ ('%.2f%%'|format(row.rolling.maximum_drawdown * 100)) if row.rolling.maximum_drawdown is not none else '—' }}</td>
+        <td>{{ row.rolling.last_observation or row.rolling.status|replace('_', ' ') }}<small class="table-sub">{{ row.rolling.freshness_status|replace('_', ' ') }} · {{ row.rolling.used_observations or 0 }}/{{ row.rolling.window_observations or 0 }}</small></td>
+      </tr>
+      {% else %}<tr><td colspan="13" class="empty">No strategy monitoring evidence is available.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">Rolling PF is calculated from OOS period returns at 10 bps and is not trade-level PF. Missing matched return series remain unavailable.</p>
+</section>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Independent Forward Outcomes</h2><p>Point-in-time observed signals · next-bar execution · 10 bps per side · authority NONE</p></div>
+    <span class="status-tag {{ 'actionable' if monitor.forward_status == 'FORWARD_OUTCOMES_EVALUABLE' else 'watch' }}">{{ monitor.forward_aggregate.sample_status or 'NO SAMPLE' }}</span>
+  </div>
+  <div class="signal-rotation-strip">
+    <div><span>Sessions</span><strong>{{ monitor.forward_counts.independent_session_count or 0 }}</strong></div>
+    <div><span>Strategies observed</span><strong>{{ monitor.forward_counts.completed_strategy_count or 0 }}/{{ monitor.forward_counts.robust_strategy_count or 0 }}</strong></div>
+    <div><span>Episodes</span><strong>{{ monitor.forward_counts.episode_count or 0 }}</strong></div>
+    <div><span>Closed</span><strong>{{ monitor.forward_counts.closed_episode_count or 0 }}</strong></div>
+    <div><span>Open</span><strong>{{ monitor.forward_counts.open_episode_count or 0 }}</strong></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>Sessions</th><th>Episodes</th><th>Closed</th><th>Open</th><th>Net episode PF</th><th>PF status</th><th>Net expectancy</th><th>Win rate</th><th>Sample</th></tr></thead>
+      <tbody>
+      {% for row in monitor.rows if row.strategy_id.startswith('P1114-') %}
+      <tr>
+        <td><strong>{{ row.strategy_id }}</strong><small class="table-sub">{{ (row.family or '—')|replace('_', ' ') }} · {{ row.timeframe or '—' }}</small></td>
+        <td>{{ row.forward.independent_session_count or 0 }}</td>
+        <td>{{ row.forward.episode_count or 0 }}</td>
+        <td>{{ row.forward.closed_episode_count or 0 }}</td>
+        <td>{{ row.forward.open_episode_count or 0 }}</td>
+        <td>{{ ('%.3f'|format(row.forward.net_profit_factor)) if row.forward.net_profit_factor is not none else '—' }}</td>
+        <td>{{ row.forward.profit_factor_reason|replace('_', ' ') }}</td>
+        <td>{{ ('%.3f%%'|format(row.forward.net_expectancy * 100)) if row.forward.net_expectancy is not none else '—' }}</td>
+        <td>{{ ('%.1f%%'|format(row.forward.win_rate * 100)) if row.forward.win_rate is not none else '—' }}</td>
+        <td><span class="status-tag {{ 'actionable' if row.forward.sample_status == 'EVALUABLE' else 'watch' }}">{{ row.forward.sample_status|replace('_', ' ') }}</span></td>
+      </tr>
+      {% else %}<tr><td colspan="10" class="empty">No independent forward observations are available.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">Historical rolling OOS and independent forward outcomes are separate evidence layers. Open or awaiting episodes do not enter PF or expectancy. Evidence through {{ monitor.forward_evidence_end or '—' }}.</p>
+</section>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Dynamic Strategy Allocation</h2><p>Bayesian evidence · regime fit · softmax 2.5 · 25% strategy cap · research authority only</p></div>
+    <span class="status-tag persistent">{{ viewmodel.dynamic_strategy_count }} weighted</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>Family</th><th>TF</th><th>Score</th><th>Weight</th><th>P(edge &gt; 50%)</th><th>Sample</th><th>Coverage</th><th>Evidence</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.dynamic_strategies %}
+      <tr>
+        <td><strong>{{ row.strategy_id }}</strong></td><td>{{ row.family|replace('_',' ') }}</td><td><span class="tf-pill">{{ row.timeframe }}</span></td>
+        <td>{{ '%.3f'|format(row.score) if row.score is not none else '—' }}</td><td>{{ '%.1f%%'|format(row.weight * 100) if row.weight is not none else '—' }}</td>
+        <td>{{ '%.1f%%'|format(row.bayesian_probability * 100) if row.bayesian_probability is not none else '—' }}</td><td>{{ row.sample_count }}</td>
+        <td>{{ '%.0f%%'|format(row.metric_coverage * 100) if row.metric_coverage is not none else '—' }}</td>
+        <td><span class="status-tag {{ 'actionable' if row.evidence_status == 'GO' else 'watch' }}">{{ row.evidence_status|replace('_',' ') }}</span><small class="table-sub">{{ row.missing_metrics|join(', ') or 'complete metric set' }}</small></td>
+      </tr>
+      {% else %}<tr><td colspan="9" class="empty">No dynamic strategy allocation artifact available.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-header">
+    <div><h2>Intraday & Multi-timeframe Evidence</h2><p>{{ viewmodel.multitimeframe_architecture_count }} nested architectures · portfolio PF · 50 bps stress</p></div>
+  </div>
+  <div class="timeframe-strip">
+    {% for row in viewmodel.timeframe_summary %}
+    <article class="timeframe-card tf-{{ row.timeframe|replace('mo','month') }}">
+      <span>{{ row.timeframe }}</span>
+      <strong>{{ row.positive_pf_architectures }}/{{ row.tested_architectures }}</strong>
+      <small>positive/PF/sample · {{ row.stress_survivors }} stress survivor</small>
+      <p>{{ row.best_architecture|replace('_',' ') }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+<div class="split-layout equal">
+  <section class="panel">
+    <div class="panel-header"><div><h2>Nested OOS Sharpe</h2><p>Seaborn median heatmap; universe-level research</p></div></div>
+    <img class="stat-image" src="/analytics/strategy-timeframe-sharpe.png" alt="Strategy timeframe Sharpe heatmap">
+  </section>
+  <section class="panel">
+    <div class="panel-header"><div><h2>50 bps Cost Stress</h2><p>Portfolio profit factor by strategy and timeframe</p></div></div>
+    <img class="stat-image" src="/analytics/strategy-timeframe-cost-pf.png" alt="Strategy timeframe cost stress heatmap">
+  </section>
+</div>
+<section class="panel">
+  <div class="panel-header"><div><h2>Lower-timeframe Research Candidates</h2><p>Research tiers are not deployment authority</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Architecture</th><th>Entry family</th><th>Context</th><th>Entry TF</th><th>Folds</th><th>CAGR</th><th>Sharpe</th><th>PF</th><th>PF 50bps</th><th>Worst DD</th><th>Tier</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.multitimeframe_candidates %}
+      <tr>
+        <td><strong>{{ row.architecture }}</strong></td><td>{{ row.entry_strategy }}</td>
+        <td>{{ row.higher_timeframe }}{% if row.middle_timeframe %} → {{ row.middle_timeframe }}{% endif %}</td><td><span class="tf-pill">{{ row.lower_timeframe }}</span></td>
+        <td>{{ row.fold_count }}</td><td>{{ '%.1f%%'|format(row.median_oos_CAGR * 100) }}</td><td>{{ '%.2f'|format(row.median_oos_Sharpe) }}</td>
+        <td>{{ '%.2f'|format(row.median_oos_portfolio_pf) }}</td><td>{{ '%.2f'|format(row.cost_50bps_median_pf) }}</td>
+        <td>{{ '%.1f%%'|format(row.worst_oos_drawdown * 100) }}</td><td><span class="status-tag {{ 'actionable' if row.research_tier == 'COST_STRESS_SURVIVOR' else 'watch' }}">{{ row.research_tier }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-header"><div><h2>Validated Candidates</h2><p>OOS portfolio metrics; not live authority</p></div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Formula</th><th>TF</th><th>Asset</th><th>CAGR</th><th>Sharpe</th><th>PF</th><th>Drawdown</th><th>Robust</th><th>Deployable</th></tr></thead>
+      <tbody>
+      {% for row in viewmodel.strategies %}
+      <tr><td><strong>{{ row.formula }}</strong><small class="table-sub">{{ row.strategy_id }}</small></td><td>{{ row.timeframe }}</td><td>{{ row.asset_class }}</td>
+        <td>{{ '%.1f%%'|format(row.combined_oos_CAGR * 100) }}</td><td>{{ '%.2f'|format(row.combined_oos_Sharpe) }}</td>
+        <td>{{ '%.2f'|format(row.combined_period_profit_factor) }}</td><td>{{ '%.1f%%'|format(row.maximum_drawdown * 100) }}</td>
+        <td>{{ row.robust_pass }}</td><td>{{ row.deployable_pass }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

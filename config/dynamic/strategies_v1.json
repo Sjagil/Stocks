@@ -1,0 +1,26 @@
+{
+  "schema": "dynamic_external_strategy_registry_v1",
+  "strategies": [
+    {
+      "candidate_id": "DYN-P119-DONCHIAN-1W",
+      "strategy_name": "donchian_breakout",
+      "family": "time_series_momentum",
+      "timeframe": "1w",
+      "classification": "MANUAL_SIGNAL_CANDIDATE",
+      "profit_factor": 1.3273271129744715,
+      "stressed_profit_factor_50bps": 1.1412301062434151,
+      "positive_fold_ratio": 0.7,
+      "fold_count": 20,
+      "worst_fold_profit_factor": 0.7320055320358559,
+      "parameters": {
+        "signal_variant": "donchian_breakout",
+        "channel": 20,
+        "atr_mult": 2.0,
+        "execution": "NEXT_BAR_OPEN_AFTER_CLOSED_SIGNAL_BAR"
+      },
+      "frozen": true,
+      "authority": "NONE",
+      "source_artifact": "output/research/phase11_9/best-available-research-candidate.json"
+    }
+  ]
+}

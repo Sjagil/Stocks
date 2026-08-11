@@ -1,0 +1,183 @@
+{
+  "schema": "broad_multi_asset_universe_v1",
+  "status": "RESEARCH_UNIVERSE",
+  "automatic_execution_authority": "NONE",
+  "groups": [
+    {
+      "group": "regional_equity",
+      "asset_type": "ETF",
+      "sleeve": "etf_core",
+      "instruments": {
+        "ACWI": ["BROAD_MARKET", "GLOBAL"],
+        "VT": ["BROAD_MARKET", "GLOBAL"],
+        "SPY": ["BROAD_MARKET", "UNITED_STATES"],
+        "QQQ": ["TECHNOLOGY", "UNITED_STATES"],
+        "DIA": ["LARGE_CAP", "UNITED_STATES"],
+        "OEF": ["LARGE_CAP", "UNITED_STATES"],
+        "IWM": ["SMALL_CAP", "UNITED_STATES"],
+        "VEA": ["BROAD_MARKET", "DEVELOPED_EX_US"],
+        "VWO": ["BROAD_MARKET", "EMERGING_MARKETS"],
+        "EEM": ["BROAD_MARKET", "EMERGING_MARKETS"],
+        "IEUR": ["BROAD_MARKET", "EUROPE"],
+        "VGK": ["BROAD_MARKET", "EUROPE"],
+        "EWJ": ["BROAD_MARKET", "JAPAN"],
+        "MCHI": ["BROAD_MARKET", "CHINA"],
+        "INDA": ["BROAD_MARKET", "INDIA"],
+        "EWA": ["BROAD_MARKET", "AUSTRALIA"],
+        "EWC": ["BROAD_MARKET", "CANADA"],
+        "EWG": ["BROAD_MARKET", "GERMANY"],
+        "EWQ": ["BROAD_MARKET", "FRANCE"],
+        "EWU": ["BROAD_MARKET", "UNITED_KINGDOM"],
+        "EWT": ["BROAD_MARKET", "TAIWAN"],
+        "EWY": ["BROAD_MARKET", "SOUTH_KOREA"],
+        "EZA": ["BROAD_MARKET", "SOUTH_AFRICA"],
+        "ILF": ["BROAD_MARKET", "LATIN_AMERICA"]
+      }
+    },
+    {
+      "group": "shariah_core",
+      "asset_type": "ETF",
+      "sleeve": "etf_core",
+      "region": "GLOBAL",
+      "instruments": {
+        "SPUS": {"sector": "SHARIAH_US_EQUITY", "region": "UNITED_STATES", "product_structure": "SHARIAH_EQUITY_INDEX_ETF", "provider_symbol": "SPUS", "broker_symbol": "SPUS", "primary_exchange": "ARCA", "currency": "USD"},
+        "HLAL": {"sector": "SHARIAH_US_EQUITY", "region": "UNITED_STATES", "product_structure": "SHARIAH_EQUITY_INDEX_ETF", "provider_symbol": "HLAL", "broker_symbol": "HLAL", "primary_exchange": "NASDAQ", "currency": "USD"},
+        "UMMA": {"sector": "SHARIAH_INTERNATIONAL_EQUITY", "region": "GLOBAL_EX_US", "product_structure": "SHARIAH_EQUITY_INDEX_ETF", "provider_symbol": "UMMA", "broker_symbol": "UMMA", "primary_exchange": "NASDAQ", "currency": "USD"},
+        "SPSK": {"sector": "GLOBAL_SUKUK", "asset_type": "SUKUK_ETF", "sleeve": "bond_defensive", "region": "GLOBAL", "product_structure": "SHARIAH_SUKUK_INDEX_ETF", "provider_symbol": "SPSK", "broker_symbol": "SPSK", "primary_exchange": "ARCA", "currency": "USD"}
+      }
+    },
+    {
+      "group": "sector_equity",
+      "asset_type": "ETF",
+      "sleeve": "etf_core",
+      "region": "UNITED_STATES",
+      "instruments": {
+        "XLB": "MATERIALS",
+        "XLC": "COMMUNICATION_SERVICES",
+        "XLE": "ENERGY",
+        "XLF": "FINANCIALS",
+        "XLI": "INDUSTRIALS",
+        "XLK": "TECHNOLOGY",
+        "XLP": "CONSUMER_STAPLES",
+        "XLRE": "REAL_ESTATE",
+        "XLU": "UTILITIES",
+        "XLV": "HEALTHCARE",
+        "XLY": "CONSUMER_DISCRETIONARY",
+        "SMH": "SEMICONDUCTORS",
+        "SOXX": "SEMICONDUCTORS",
+        "IGV": "SOFTWARE",
+        "KRE": "REGIONAL_BANKS",
+        "XBI": "BIOTECHNOLOGY",
+        "IYT": "TRANSPORTATION"
+      }
+    },
+    {
+      "group": "factor_equity",
+      "asset_type": "ETF",
+      "sleeve": "etf_core",
+      "region": "UNITED_STATES",
+      "instruments": {
+        "MTUM": "FACTOR_MOMENTUM",
+        "QUAL": "FACTOR_QUALITY",
+        "USMV": "FACTOR_MIN_VOL",
+        "VLUE": "FACTOR_VALUE",
+        "SIZE": "FACTOR_SIZE",
+        "SCHD": "DIVIDEND_QUALITY"
+      }
+    },
+    {
+      "group": "fixed_income",
+      "asset_type": "BOND_ETF",
+      "sleeve": "bond_defensive",
+      "region": "UNITED_STATES",
+      "instruments": {
+        "BIL": "SHORT_TREASURY",
+        "SGOV": "SHORT_TREASURY",
+        "SHY": "SHORT_TREASURY",
+        "IEF": "TREASURY",
+        "TLT": "LONG_TREASURY",
+        "TIP": "INFLATION_LINKED_BOND",
+        "LQD": "INVESTMENT_GRADE_CREDIT",
+        "HYG": "HIGH_YIELD_CREDIT",
+        "BND": "AGGREGATE_BOND",
+        "AGG": "AGGREGATE_BOND",
+        "EMB": "EMERGING_MARKET_BOND"
+      }
+    },
+    {
+      "group": "commodity_security",
+      "asset_type": "COMMODITY_ETF",
+      "sleeve": "commodity_security",
+      "region": "GLOBAL",
+      "instruments": {
+        "GLD": {"sector": "GOLD", "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "GOLD", "provider_symbol": "GLD", "broker_symbol": "GLD", "primary_exchange": "ARCA", "currency": "USD"},
+        "IAU": {"sector": "GOLD", "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "GOLD", "provider_symbol": "IAU", "broker_symbol": "IAU", "primary_exchange": "ARCA", "currency": "USD"},
+        "SLV": {"sector": "SILVER", "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "SILVER", "provider_symbol": "SLV", "broker_symbol": "SLV", "primary_exchange": "ARCA", "currency": "USD"},
+        "PPLT": {"sector": "PLATINUM", "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "PLATINUM", "provider_symbol": "PPLT", "broker_symbol": "PPLT", "primary_exchange": "ARCA", "currency": "USD"},
+        "PALL": {"sector": "PALLADIUM", "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "PALLADIUM", "provider_symbol": "PALL", "broker_symbol": "PALL", "primary_exchange": "ARCA", "currency": "USD"},
+        "SPPP": {"sector": "PLATINUM_GROUP_METALS", "asset_type": "COMMODITY_CLOSED_END_TRUST", "product_structure": "PHYSICAL_CLOSED_END_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "PLATINUM_PALLADIUM", "provider_symbol": "SPPP", "broker_symbol": "SPPP", "primary_exchange": "ARCA", "currency": "USD"},
+        "SCOP": {"sector": "COPPER", "asset_type": "COMMODITY_CLOSED_END_TRUST", "product_structure": "PHYSICAL_CLOSED_END_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "COPPER", "provider_symbol": "SCOP", "broker_symbol": "SCOP", "primary_exchange": "ARCA", "currency": "USD"},
+        "U-UN.TO": {"sector": "URANIUM", "asset_type": "COMMODITY_CLOSED_END_TRUST", "product_structure": "PHYSICAL_CLOSED_END_TRUST", "commodity_exposure_type": "PHYSICAL_COMMODITY", "underlying_commodity": "URANIUM_U3O8", "provider_symbol": "U-UN.TO", "broker_symbol": "U.UN", "primary_exchange": "TSE", "currency": "CAD"},
+        "DBC": {"sector": "BROAD_COMMODITY", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_BASKET", "underlying_commodity": "BROAD_COMMODITY", "provider_symbol": "DBC", "broker_symbol": "DBC", "primary_exchange": "ARCA", "currency": "USD"},
+        "PDBC": {"sector": "BROAD_COMMODITY", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_BASKET", "underlying_commodity": "BROAD_COMMODITY", "provider_symbol": "PDBC", "broker_symbol": "PDBC", "primary_exchange": "NASDAQ", "currency": "USD"},
+        "DBA": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_BASKET", "underlying_commodity": "AGRICULTURE", "provider_symbol": "DBA", "broker_symbol": "DBA", "primary_exchange": "ARCA", "currency": "USD"},
+        "DBB": {"sector": "INDUSTRIAL_METALS", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_BASKET", "underlying_commodity": "INDUSTRIAL_METALS", "provider_symbol": "DBB", "broker_symbol": "DBB", "primary_exchange": "ARCA", "currency": "USD"},
+        "CPER": {"sector": "COPPER", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "COPPER", "provider_symbol": "CPER", "broker_symbol": "CPER", "primary_exchange": "ARCA", "currency": "USD"},
+        "USO": {"sector": "OIL", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "WTI_CRUDE", "provider_symbol": "USO", "broker_symbol": "USO", "primary_exchange": "ARCA", "currency": "USD"},
+        "BNO": {"sector": "OIL", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "BRENT_CRUDE", "provider_symbol": "BNO", "broker_symbol": "BNO", "primary_exchange": "ARCA", "currency": "USD"},
+        "UNG": {"sector": "NATURAL_GAS", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "NATURAL_GAS", "provider_symbol": "UNG", "broker_symbol": "UNG", "primary_exchange": "ARCA", "currency": "USD"},
+        "UGA": {"sector": "REFINED_PRODUCTS", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "GASOLINE", "provider_symbol": "UGA", "broker_symbol": "UGA", "primary_exchange": "ARCA", "currency": "USD"},
+        "WEAT": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "WHEAT", "provider_symbol": "WEAT", "broker_symbol": "WEAT", "primary_exchange": "ARCA", "currency": "USD"},
+        "CORN": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "CORN", "provider_symbol": "CORN", "broker_symbol": "CORN", "primary_exchange": "ARCA", "currency": "USD"},
+        "SOYB": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "SOYBEANS", "provider_symbol": "SOYB", "broker_symbol": "SOYB", "primary_exchange": "ARCA", "currency": "USD"},
+        "CANE": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "SUGAR", "provider_symbol": "CANE", "broker_symbol": "CANE", "primary_exchange": "ARCA", "currency": "USD"},
+        "JO": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "COFFEE", "provider_symbol": "JO", "broker_symbol": "JO", "primary_exchange": "ARCA", "currency": "USD"},
+        "NIB": {"sector": "AGRICULTURE", "product_structure": "FUTURES_COMMODITY_POOL", "commodity_exposure_type": "FUTURES_SINGLE_COMMODITY", "underlying_commodity": "COCOA", "provider_symbol": "NIB", "broker_symbol": "NIB", "primary_exchange": "ARCA", "currency": "USD"}
+      }
+    },
+    {
+      "group": "commodity_producer_equity_funds",
+      "asset_type": "COMMODITY_EQUITY_ETF",
+      "sleeve": "commodity_security",
+      "region": "GLOBAL",
+      "instruments": {
+        "COPX": {"sector": "COPPER_MINERS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "COPPER", "provider_symbol": "COPX", "broker_symbol": "COPX", "primary_exchange": "ARCA", "currency": "USD"},
+        "URA": {"sector": "URANIUM_MINERS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "URANIUM", "provider_symbol": "URA", "broker_symbol": "URA", "primary_exchange": "ARCA", "currency": "USD"},
+        "URNM": {"sector": "URANIUM_MINERS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "URANIUM", "provider_symbol": "URNM", "broker_symbol": "URNM", "primary_exchange": "ARCA", "currency": "USD"},
+        "LIT": {"sector": "BATTERY_MATERIALS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "LITHIUM_BATTERY_CHAIN", "provider_symbol": "LIT", "broker_symbol": "LIT", "primary_exchange": "ARCA", "currency": "USD"},
+        "REMX": {"sector": "RARE_EARTHS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "RARE_EARTHS", "provider_symbol": "REMX", "broker_symbol": "REMX", "primary_exchange": "ARCA", "currency": "USD"},
+        "EART": {"sector": "CRITICAL_MATERIALS", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "CRITICAL_MATERIALS", "provider_symbol": "EART", "broker_symbol": "EART", "primary_exchange": "ARCA", "currency": "USD"},
+        "PICK": {"sector": "DIVERSIFIED_METALS_MINING", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "DIVERSIFIED_METALS", "provider_symbol": "PICK", "broker_symbol": "PICK", "primary_exchange": "BATS", "currency": "USD"},
+        "XME": {"sector": "METALS_MINING", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "METALS_MINING", "provider_symbol": "XME", "broker_symbol": "XME", "primary_exchange": "ARCA", "currency": "USD"},
+        "SLX": {"sector": "STEEL", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "STEEL", "provider_symbol": "SLX", "broker_symbol": "SLX", "primary_exchange": "ARCA", "currency": "USD"},
+        "WOOD": {"sector": "TIMBER", "product_structure": "PRODUCER_EQUITY_FUND", "commodity_exposure_type": "PRODUCER_EQUITY_BASKET", "underlying_commodity": "TIMBER", "provider_symbol": "WOOD", "broker_symbol": "WOOD", "primary_exchange": "NASDAQ", "currency": "USD"},
+        "PHO": {"sector": "WATER_INFRASTRUCTURE", "product_structure": "RESOURCE_EQUITY_FUND", "commodity_exposure_type": "RESOURCE_INFRASTRUCTURE_BASKET", "underlying_commodity": "WATER", "provider_symbol": "PHO", "broker_symbol": "PHO", "primary_exchange": "NASDAQ", "currency": "USD"}
+      }
+    },
+    {
+      "group": "real_assets",
+      "asset_type": "REAL_ASSET_ETF",
+      "sleeve": "etf_core",
+      "instruments": {
+        "VNQ": ["REAL_ESTATE", "UNITED_STATES"],
+        "REET": ["REAL_ESTATE", "GLOBAL"]
+      }
+    },
+    {
+      "group": "currency_context",
+      "asset_type": "CURRENCY_ETF",
+      "sleeve": "etf_core",
+      "region": "GLOBAL",
+      "instruments": {
+        "UUP": "USD_CONTEXT",
+        "FXE": "EUR_CONTEXT",
+        "FXY": "JPY_CONTEXT"
+      }
+    }
+  ],
+  "eligibility_policy": {
+    "research_observation": "ALLOWED_WHEN_CAUSAL_DATA_AVAILABLE",
+    "manual_signal": "REQUIRES_CURRENT_DATA_CONTRACT_AND_SHARIAH_GATES",
+    "automatic_execution": "REQUIRES_SEPARATE_STRATEGY_AND_EXECUTION_AUTHORITY"
+  }
+}

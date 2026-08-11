@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | Stocks Console</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <script defer src="{{ url_for('static', path='/lucide.min.js') }}"></script>
+  <script defer src="{{ url_for('static', path='/plotly.min.js') }}"></script>
+  <script defer src="{{ url_for('static', path='/app.js') }}"></script>
+</head>
+<body data-page="{{ active_path }}">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">S</span>
+      <div><strong>Stocks</strong><small>Operations Console</small></div>
+    </div>
+    <nav aria-label="Primary">
+      {% set items = [
+        ('/', 'layout-dashboard', 'Operations'),
+        ('/signals', 'radar', 'Signals'),
+        ('/universe', 'search', 'Universe'),
+        ('/sectors', 'blocks', 'Sectors'),
+        ('/industries', 'factory', 'Industries'),
+        ('/regions', 'globe-2', 'Regions'),
+        ('/etfs', 'layers-3', 'ETFs'),
+        ('/commodities', 'chart-no-axes-combined', 'Commodities'),
+        ('/strategies', 'workflow', 'Strategies'),
+        ('/portfolio', 'briefcase-business', 'Portfolio'),
+        ('/performance', 'calendar-days', 'P&L Calendar'),
+        ('/news', 'newspaper', 'News'),
+        ('/research', 'flask-conical', 'Research'),
+        ('/health', 'activity', 'Health'),
+        ('/audit', 'file-search-2', 'Audit')
+      ] %}
+      {% for href, icon, label in items %}
+      <a href="{{ href }}" class="{{ 'active' if active_path == href else '' }}">
+        <i data-lucide="{{ icon }}"></i><span>{{ label }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="authority">
+      <span class="status-dot warning"></span>
+      <div><strong>Authority NONE</strong><small>Read-only interface</small></div>
+    </div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>{{ title }}</h1>
+        <p id="refresh-state">Repository-backed view · awaiting state stream</p>
+      </div>
+      <div class="top-actions">
+        <span class="mode-badge">SIGNALS ONLY</span>
+        <button class="icon-button" type="button" onclick="window.location.reload()" title="Refresh view">
+          <i data-lucide="refresh-cw"></i>
+        </button>
+      </div>
+    </header>
+    <section class="content">
+      {% block content %}{% endblock %}
+    </section>
+  </main>
+</body>
+</html>

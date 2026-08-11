@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "managers": [
+    {
+      "manager_key": "SCION",
+      "manager_name": "Scion Asset Management, LLC",
+      "associated_person": "Michael Burry",
+      "cik": "0001649339",
+      "enabled": true,
+      "authority": "DELAYED_CONTEXT_ONLY"
+    },
+    {
+      "manager_key": "BERKSHIRE",
+      "manager_name": "Berkshire Hathaway Inc",
+      "associated_person": "Warren Buffett context",
+      "cik": "0001067983",
+      "enabled": true,
+      "authority": "DELAYED_CONTEXT_ONLY"
+    },
+    {
+      "manager_key": "PERSHING",
+      "manager_name": "Pershing Square Capital Management, L.P.",
+      "associated_person": "Bill Ackman",
+      "cik": "0001336528",
+      "enabled": true,
+      "authority": "DELAYED_CONTEXT_ONLY"
+    },
+    {
+      "manager_key": "DUQUESNE",
+      "manager_name": "Duquesne Family Office LLC",
+      "associated_person": "Stanley Druckenmiller",
+      "cik": "0001536411",
+      "enabled": true,
+      "authority": "DELAYED_CONTEXT_ONLY"
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "schema": "stocks_parameter_space_registry_v2",
+  "registry_version": "2.1.0",
+  "random_seed": 20260722,
+  "inherit_runtime_registry": true,
+  "runtime_registry": "strategy_combo_research_lab.strategy_registry",
+  "runtime_registry_contract": {
+    "include_every_long_only_runtime_strategy": true,
+    "resolved_copy_required_per_run": true,
+    "unknown_strategy": "UNREGISTERED_STRATEGY_BLOCKED",
+    "unknown_parameter": "UNREGISTERED_PARAMETER_VALUE_BLOCKED"
+  },
+  "timeframes": {
+    "1d": {
+      "status": "NATIVE_DATA_AVAILABLE",
+      "periods_per_year": "empirical"
+    },
+    "1w": {
+      "status": "CAUSAL_CLOSED_WEEK_RESAMPLE_AVAILABLE",
+      "periods_per_year": "empirical"
+    },
+    "1h": {
+      "status": "DATA_UNAVAILABLE_BLOCKED"
+    },
+    "2h": {
+      "status": "DERIVED_FROM_CLOSED_1H_WHEN_AVAILABLE"
+    },
+    "4h": {
+      "status": "DERIVED_FROM_CLOSED_1H_WHEN_AVAILABLE"
+    },
+    "6h": {
+      "status": "DERIVED_FROM_CLOSED_1H_WHEN_AVAILABLE"
+    },
+    "12h": {
+      "status": "DERIVED_FROM_CLOSED_1H_WHEN_AVAILABLE"
+    }
+  },
+  "forbidden_timeframes": ["1min", "5m", "15m", "30m", "tick", "ticks"],
+  "search_contract": {
+    "small_space_threshold": 500,
+    "preferred_methods": [
+      "exhaustive",
+      "sobol",
+      "latin-hypercube",
+      "deterministic-random"
+    ],
+    "continuous_refinement": "registered_midpoints_only",
+    "integer_period_refinement": "registered_integer_values_only",
+    "maximum_coarse_trials": 2000,
+    "maximum_refinement_trials": 500,
+    "maximum_neighbor_trials": 300,
+    "normal_cost_multiplier": 1.0,
+    "double_cost_multiplier": 2.0
+  },
+  "strategy_overrides": {
+    "rsi_adx": {
+      "economic_rationale": "Falsify whether short-term exhaustion plus trend strength has a broad net-positive region.",
+      "priority": 2,
+      "refinement_parameters": [
+        "entry_threshold",
+        "adx_threshold"
+      ],
+      "control_labels": {
+        "entry_threshold": {
+          "30": "CONTROL_WEAK_OVERSOLD",
+          "35": "CONTROL_WEAK_OVERSOLD"
+        }
+      }
+    },
+    "seven_day_pullback": {
+      "economic_rationale": "Test bounded trend-filtered pullback horizons without rescuing a failed family through unlimited filters.",
+      "priority": 2
+    },
+    "ma_channel": {
+      "economic_rationale": "Test whether channel persistence survives neighboring lookbacks and realistic portfolio costs.",
+      "priority": 1
+    },
+    "ma_crossover": {
+      "economic_rationale": "Test a broad slow-trend region and reject isolated fast/slow sweet spots.",
+      "priority": 1
+    },
+    "asymmetric_ma_crossover": {
+      "economic_rationale": "Test separate entry and exit speeds with structural fast/slow constraints.",
+      "priority": 1
+    },
+    "bollinger_breakout": {
+      "economic_rationale": "Test volatility-normalized breakouts across broad periods and band widths.",
+      "priority": 1,
+      "refinement_parameters": [
+        "entry_sigma",
+        "exit_sigma",
+        "stop_atr"
+      ]
+    },
+    "market_structure_atr_pullback": {
+      "economic_rationale": "Stress a breakout-pullback model that previously exhibited unacceptable drawdown.",
+      "priority": 2
+    },
+    "five_bar_contrarian": {
+      "economic_rationale": "Falsification study for a prior out-of-sample collapse.",
+      "priority": 2
+    },
+    "percent_flipper": {
+      "economic_rationale": "Test trend thresholds independently while flagging boundary dependence.",
+      "priority": 2,
+      "refinement_parameters": [
+        "threshold"
+      ]
+    },
+    "rotational_momentum": {
+      "economic_rationale": "Test monthly causal cross-sectional momentum with bounded ranking and trend gates.",
+      "priority": 2
+    },
+    "triple_screen": {
+      "economic_rationale": "Multi-timeframe family; weekly features must use only completed weeks.",
+      "priority": 3
+    }
+  },
+  "reference_sources": [
+    {
+      "path": "rsi2_adx5_vwap.py",
+      "status": "READ_ONLY_FORMULA_REFERENCE",
+      "notes": "VWAP, RSI, ADX and ATR formulas may inform registered research; its standalone capital engine is not imported."
+    },
+    {
+      "path": "strategy_research_hub_v3_1_0_definitive.py",
+      "status": "READ_ONLY_FORMULA_REFERENCE",
+      "notes": "External data and hub orchestration are excluded from the local PIT campaign."
+    },
+    {
+      "path": "strategy1.py",
+      "status": "BROKER_AND_EXTERNAL_CLIENT_IMPORT_BLOCKED",
+      "notes": "Mathematical ideas may be reviewed, but the module must never be imported by offline parameter research."
+    }
+  ],
+  "requested_extensions": {
+    "status": "IMPLEMENTATION_BLOCKED_UNTIL_SIGNAL_BUILDERS_EXIST",
+    "fields": [
+      "new_exit_modes",
+      "new_regime_filters",
+      "new_stop_target_combinations",
+      "intraday_timeframes"
+    ]
+  },
+  "authority": {
+    "FINANCIAL_FINALIST_GO": false,
+    "FORWARD_SHADOW_GO": false,
+    "STRATEGY_AUTHORITY": "NONE",
+    "EXECUTION_AUTHORITY": "NONE",
+    "BROKER_CALLS": 0
+  }
+}

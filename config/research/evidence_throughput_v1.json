@@ -1,0 +1,80 @@
+{
+  "schema": "evidence_throughput_config_v1",
+  "validation_ratio_low_threshold": 0.1,
+  "minimum_forward_closed_episodes_per_candidate": 30,
+  "near_finalist_maximum_blockers": 4,
+  "dsr_sharpe_threshold": 0.0,
+  "minimum_dsr_probability": 0.95,
+  "maximum_pbo": 0.4,
+  "oos_fold_bootstrap_runs": 5000,
+  "minimum_event_window_observations": 20,
+  "minimum_non_event_window_observations": 100,
+  "minimum_aligned_macro_releases": 10,
+  "forward_sample_acceleration": {
+    "minimum_distinct_assets_per_candidate": 5,
+    "minimum_distinct_sectors_per_stock_candidate": 3,
+    "prioritize_existing_open_episodes": true,
+    "maximum_priority_candidates": 8
+  },
+  "forward_independence": {
+    "cluster_gap_bars": 3,
+    "timeframe_seconds": {
+      "1h": 3600,
+      "2h": 7200,
+      "4h": 14400,
+      "1d": 86400,
+      "1w": 604800,
+      "1mo": 2592000
+    }
+  },
+  "evidence_distance_weights": {
+    "dsr": 0.2,
+    "pbo": 0.2,
+    "historical_shariah": 0.2,
+    "forward": 0.25,
+    "paper_session": 0.15
+  },
+  "graduated_strategy_authority": {
+    "enabled": true,
+    "base_risk_fraction": 0.006,
+    "maximum_provisional_risk_multiplier": 0.2,
+    "unavailable_pbo_multiplier": 0.25,
+    "canary_requires_complete_paper_session": true,
+    "live_normal_requires_financial_finalist": true,
+    "pbo_multipliers": [
+      {"maximum_exclusive": 0.3, "multiplier": 1.0},
+      {"maximum_exclusive": 0.45, "multiplier": 0.8},
+      {"maximum_exclusive": 0.6, "multiplier": 0.55},
+      {"maximum_exclusive": 0.7, "multiplier": 0.35},
+      {"maximum_exclusive": 1.01, "multiplier": 0.0}
+    ],
+    "forward_episode_multipliers": [
+      {"maximum_exclusive": 5, "multiplier": 0.25},
+      {"maximum_exclusive": 15, "multiplier": 0.4},
+      {"maximum_exclusive": 30, "multiplier": 0.6},
+      {"maximum_exclusive": 60, "multiplier": 0.8},
+      {"maximum_exclusive": 1000000000, "multiplier": 1.0}
+    ],
+    "minimum_dsr_multiplier": 0.25
+  },
+  "compute_allocations": {
+    "validation_backlog": {
+      "new_hypotheses": 0.05,
+      "fast_validation": 0.2,
+      "exact_backtest": 0.2,
+      "cost_stress": 0.1,
+      "walk_forward": 0.15,
+      "robustness_dsr_pbo": 0.2,
+      "forward_analysis": 0.1
+    },
+    "balanced": {
+      "new_hypotheses": 0.15,
+      "fast_validation": 0.2,
+      "exact_backtest": 0.15,
+      "cost_stress": 0.1,
+      "walk_forward": 0.15,
+      "robustness_dsr_pbo": 0.15,
+      "forward_analysis": 0.1
+    }
+  }
+}

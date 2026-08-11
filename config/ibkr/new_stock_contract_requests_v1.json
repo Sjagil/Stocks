@@ -1,0 +1,83 @@
+{
+  "schema": "ibkr_new_stock_contract_requests_v1",
+  "description": "Explicit, ambiguity-blocking STK identities for the current portfolio opportunity queue.",
+  "requests": [
+    {
+      "symbol": "AMAT",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "ANET",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NYSE"
+    },
+    {
+      "symbol": "APH",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NYSE"
+    },
+    {
+      "symbol": "CSCO",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "CSX",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "LRCX",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "TXN",
+      "asset_class": "stock",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "SPUS",
+      "asset_class": "etf",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "ARCA"
+    },
+    {
+      "symbol": "HLAL",
+      "asset_class": "etf",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "UMMA",
+      "asset_class": "etf",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "NASDAQ"
+    },
+    {
+      "symbol": "SPSK",
+      "asset_class": "etf",
+      "currency": "USD",
+      "exchange": "SMART",
+      "primary_exchange": "ARCA"
+    }
+  ]
+}
