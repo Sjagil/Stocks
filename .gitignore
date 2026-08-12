@@ -17,7 +17,7 @@ backups/
 .codex-backups/
 .codex_backups/
 .codex-imports/
-data/
+/data/
 rsi2_adx5_vwap/
 *.backup-*
 *_backup_*
