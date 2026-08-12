@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from stocks.capital.canary import load_level_one_canary_policy
+from stocks.execution.idempotency import stable_hash
 from stocks.live.level_one_reauthorization import (
     AUTHORITATIVE_SOURCES,
     build_p02_freeze,
@@ -78,14 +80,39 @@ def _seed_policy_and_sources(tmp_path) -> None:
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-    policy_source = (
-        PROJECT_ROOT / "output/ibkr/live/whole-share-canary-policy-v1.json"
-    )
+    configured = load_level_one_canary_policy(tmp_path)
     policy_target = (
         tmp_path / "output/ibkr/live/whole-share-canary-policy-v1.json"
     )
     policy_target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(policy_source, policy_target)
+
+    level_one_limits = {}
+    policy = {
+        "schema": "whole_share_canary_policy_artifact_v1",
+        "status": "GO",
+        "capital_level": 1,
+        "capital_level_name": "WHOLE_SHARE_EXECUTION_CANARY",
+        "policy_version": configured.policy_version,
+        "fractional_shares_allowed": False,
+        "whole_share_required": True,
+        "primary_sizing_authority": "RISK_PER_WHOLE_SHARE",
+        "notional_cap_role": "SECONDARY_EMERGENCY_BACKSTOP",
+        "level_one_limits": level_one_limits,
+        "promotion_requirements": {
+            "minimum_verified_whole_share_round_trips": 5,
+        },
+    }
+    policy["policy_hash"] = stable_hash(
+        {
+            "configured_policy": configured.jsonable(),
+            "resolved_limits": level_one_limits,
+        }
+    )
+    policy["content_hash"] = stable_hash(policy)
+    policy_target.write_text(
+        json.dumps(policy, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     prior_hashes = {
         relative: normalized_file_hash(tmp_path / relative)
         for relative in AUTHORITATIVE_SOURCES

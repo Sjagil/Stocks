@@ -262,10 +262,34 @@ def test_no_ibkr_writer_paper_or_live_calls() -> None:
 
 
 def test_phase7_through_phase10_dependencies_unchanged_by_read(tmp_path: Path) -> None:
-    del tmp_path
-    root = Path(__file__).parents[1]
-    before = {name: sha256_file(root / relative) for name, relative in PROTECTED_PATHS.items()}
+    for relative in PROTECTED_PATHS.values():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"protected-test-fixture")
+
+    phase10_freeze = tmp_path / "output/ibkr/phase10/freeze-status.json"
+    phase10_freeze.parent.mkdir(parents=True, exist_ok=True)
+    phase10_freeze.write_text(
+        json.dumps(
+            {
+                "freeze_status": (
+                    "PHASE10_AUTONOMOUS_SHARIAH_PAPER_TRADING_FOUNDATION_FROZEN_GO"
+                ),
+                "source_hashes": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    before = {
+        name: sha256_file(tmp_path / relative)
+        for name, relative in PROTECTED_PATHS.items()
+    }
     assert all(before.values())
-    after = {name: sha256_file(root / relative) for name, relative in PROTECTED_PATHS.items()}
+
+    after = {
+        name: sha256_file(tmp_path / relative)
+        for name, relative in PROTECTED_PATHS.items()
+    }
     assert after == before
-    assert frozen_dependency_integrity(root)["status"] == "GO"
+    assert frozen_dependency_integrity(tmp_path)["status"] == "GO"

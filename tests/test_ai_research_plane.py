@@ -352,6 +352,14 @@ def test_ai_package_has_no_broker_import_or_writer_call() -> None:
 
 def test_publish_plane_inspects_all_repos_and_keeps_33_capabilities() -> None:
     status = publish_ai_research_plane(ROOT)
+
+    if not (ROOT / "reference_repos").is_dir():
+        assert status["status"] == "NO_GO"
+        assert "LOCAL_REFERENCE_INSPECTION_INCOMPLETE" in status["blockers"]
+        assert status["reference_repo_count"] == 14
+        assert status["capability_count"] == 33
+        return
+
     assert status["status"] == "GO"
     assert status["reference_repo_count"] == 14
     assert status["capability_count"] == 33

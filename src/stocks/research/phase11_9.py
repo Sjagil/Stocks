@@ -3,7 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import msvcrt
+import os
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from functools import wraps
@@ -240,7 +245,13 @@ def _single_flight(
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(
+                    handle.fileno(),
+                    fcntl.LOCK_EX | fcntl.LOCK_NB,
+                )
         except OSError:
             handle.close()
             return {
@@ -253,7 +264,13 @@ def _single_flight(
             return function(project_root)
         finally:
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(
+                    handle.fileno(),
+                    fcntl.LOCK_UN,
+                )
             handle.close()
 
     return guarded

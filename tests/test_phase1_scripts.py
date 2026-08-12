@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,8 +13,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_powershell(script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    executable = shutil.which("powershell") or shutil.which("pwsh")
+    if executable is None:
+        raise RuntimeError("PowerShell executable not found")
+
+    command = [executable, "-NoProfile"]
+
+    if os.name == "nt":
+        command.extend(["-ExecutionPolicy", "Bypass"])
+
+    command.extend(["-File", script, *args])
+
     return subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, *args],
+        command,
         cwd=PROJECT_ROOT,
         text=True,
         capture_output=True,

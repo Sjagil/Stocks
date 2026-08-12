@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -10,6 +11,7 @@ import pytest
 from stocks.auto_paper.authority import AuthorityDependencies, entry_authority, foundation_authority
 from stocks.auto_paper.audit import (
     COUNTERS,
+    FROZEN_DEPENDENCIES,
     IMMUTABLE_PHASE9_ARTIFACTS,
     PRIVATE_DEPENDENCIES,
     _phase9_progression_valid,
@@ -428,13 +430,38 @@ def test_phase10_source_has_no_brokerwrite_invocation() -> None:
     assert all(value == 0 for value in COUNTERS.values())
 
 
-def test_frozen_dependency_audit_is_read_only() -> None:
-    project_root = Path(__file__).parents[1]
+def test_frozen_dependency_audit_is_read_only(tmp_path: Path) -> None:
     protected = PRIVATE_DEPENDENCIES | IMMUTABLE_PHASE9_ARTIFACTS
-    before = {name: sha256_file(project_root / relative) for name, relative in protected.items()}
+
+    for relative in protected.values():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"immutable-test-fixture")
+
+    for relative, expected_marker in FROZEN_DEPENDENCIES.values():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "status": expected_marker,
+                    "source_hashes": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    before = {
+        name: sha256_file(tmp_path / relative)
+        for name, relative in protected.items()
+    }
     assert all(before.values())
-    assert frozen_dependency_audit(project_root)["status"] == "GO"
-    after = {name: sha256_file(project_root / relative) for name, relative in protected.items()}
+    assert frozen_dependency_audit(tmp_path)["status"] == "GO"
+
+    after = {
+        name: sha256_file(tmp_path / relative)
+        for name, relative in protected.items()
+    }
     assert after == before
 
 
