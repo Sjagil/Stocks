@@ -29,10 +29,87 @@ from stocks.ai import (
     validate_point_in_time_rows,
 )
 from stocks.ai.governance import write_immutable_experiment
+from stocks.p3.publisher import (
+    _ai_incremental_evidence_go,
+    _canonical_state,
+    _p3_scheduler_integration_present,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 8, 11, 12, tzinfo=UTC)
+
+
+def test_p3_ai_incremental_gate_accepts_only_explicit_positive_evidence() -> None:
+    assert _ai_incremental_evidence_go("SHADOW_VALIDATION_GO") is True
+    for status in (
+        None,
+        "NO_INCREMENTAL_EVIDENCE",
+        "INSUFFICIENT_EVIDENCE",
+        "REJECTED_NO_INCREMENTAL_OOS_VALUE",
+        "SHADOW_ONLY_EXTERNAL_DATA_GATES_BLOCKED",
+    ):
+        assert _ai_incremental_evidence_go(status) is False
+
+
+def test_p3_canonical_state_prefers_fresh_phase9_broker_observation(
+    tmp_path: Path,
+) -> None:
+    phase9 = tmp_path / "output/ibkr/phase9"
+    phase9.mkdir(parents=True)
+    (phase9 / "reconciliation-audit.json").write_text(
+        json.dumps(
+            {
+                "status": "NO_GO",
+                "generated_at": "2026-08-11T12:00:00+00:00",
+                "broker_observation_status": "GO",
+                "reconciliation_status": "LOCAL_ORDER_MISSING_AT_BROKER",
+                "operational_broker_state_status": "CURRENT_BROKER_FLAT_READ_ONLY",
+                "canonical_execution_evidence_status": (
+                    "INCOMPLETE_HISTORICAL_EXECUTION_CHAIN"
+                ),
+                "broker_position_count": 0,
+                "broker_open_order_count": 0,
+                "broker_execution_count": 0,
+                "broker_commission_count": 0,
+                "broker_write_counters": {"place_order_calls": 0},
+                "execution_history_complete": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    live = tmp_path / "output/ibkr/live"
+    live.mkdir(parents=True)
+    (live / "reconciliation.json").write_text(
+        json.dumps(
+            {
+                "status": "NO_GO",
+                "reconciliation_status": "LIVE_TWS_SOCKET_UNREACHABLE",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = _canonical_state(
+        tmp_path, "2026-08-11T12:05:00+00:00", source_hashes={}
+    )
+
+    assert state["status"] == "GO"
+    assert state["broker"]["source"] == "PHASE9_READ_ONLY_AUDIT"
+    assert state["broker"]["reconciliation_blocks_new_risk"] is True
+    assert state["broker"]["broker_writes"] == 0
+
+
+def test_p3_scheduler_detection_follows_delegated_primary_refresh(
+    tmp_path: Path,
+) -> None:
+    operations = tmp_path / "src/stocks/operations"
+    operations.mkdir(parents=True)
+    (operations / "primary_refresh.py").write_text(
+        'RefreshStep("P3_EVIDENCE", ("p3", "publish"), 1.0, 300)\n',
+        encoding="utf-8",
+    )
+    assert _p3_scheduler_integration_present(tmp_path) is True
 
 
 def _model(**changes: object) -> ModelRecord:
@@ -278,7 +355,13 @@ def test_publish_plane_inspects_all_repos_and_keeps_33_capabilities() -> None:
     assert status["status"] == "GO"
     assert status["reference_repo_count"] == 14
     assert status["capability_count"] == 33
-    assert status["financial_validation_status"] == "NO_INCREMENTAL_EVIDENCE"
+    assert status["financial_validation_status"] in {
+        "NO_INCREMENTAL_EVIDENCE",
+        "REJECTED_NO_INCREMENTAL_OOS_VALUE",
+    }
+    if status["financial_validation_status"] == "REJECTED_NO_INCREMENTAL_OOS_VALUE":
+        assert status["global_oos_observations"] > 0
+        assert status["global_current_evidence_count"] > 0
     assert not status["ai_money_control"]
     assert status["broker_calls"] == status["writer_calls"] == 0
     matrix = json.loads(
@@ -290,3 +373,13 @@ def test_publish_plane_inspects_all_repos_and_keeps_33_capabilities() -> None:
     assert all(row["status"] == "PRESENT_INSPECTED" for row in matrix["repositories"])
     assert len(matrix["capabilities"]) == 33
     assert not matrix["capability_34_added"]
+    model_registry = json.loads(
+        (ROOT / "output/ai/model-registry.json").read_text(encoding="utf-8")
+    )
+    model_features = {
+        feature
+        for model in model_registry["models"]
+        for feature in model["feature_set"]
+    }
+    assert "return_1d" in model_features
+    assert "return_1" not in model_features

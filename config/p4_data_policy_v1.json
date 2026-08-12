@@ -1,0 +1,43 @@
+{
+  "schema": "p4_point_in_time_data_policy_v1",
+  "version": "1.0.0",
+  "status": "FROZEN",
+  "target_universe": "US_LIQUID_SHARIAH_EQUITIES_V1",
+  "initial_rl_research_scope": "SPUS_DAILY_UNRESTRICTED_RESEARCH_ONLY",
+  "required_datasets": [
+    "security_master",
+    "universe_membership",
+    "delistings",
+    "corporate_actions",
+    "fundamentals",
+    "shariah_classification",
+    "daily_prices"
+  ],
+  "source_requirements": {
+    "provider_required": true,
+    "source_version_required": true,
+    "license_required": true,
+    "licensed_for_research_required": true,
+    "complete_history_attestation_required": true,
+    "point_in_time_semantics_attestation_required": true,
+    "sha256_per_snapshot": true,
+    "publication_timestamp_required": true,
+    "current_membership_may_replace_history": false,
+    "current_shariah_may_replace_history": false,
+    "missing_delisting_return_may_be_zero": false
+  },
+  "time_semantics": {
+    "timestamps": "UTC",
+    "features_use_available_at_not_period_end": true,
+    "revisions_preserved": true,
+    "overlapping_effective_intervals_allowed": false
+  },
+  "forward_observer": {
+    "reuse": "PHASE11_14_FROZEN_FORWARD_OBSERVER",
+    "forced_trade_allowed": false,
+    "historical_backfill_counts_as_forward": false,
+    "automatic_threshold_relaxation": false
+  },
+  "execution_authority": "NONE",
+  "money_control": false
+}

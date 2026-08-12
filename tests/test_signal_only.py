@@ -45,6 +45,14 @@ def _signal(
 
 
 def setup_signal_fixture(root: Path, monkeypatch: object) -> str:
+    registry = root / "config/research_contracts/stocks_strategy_timeframe_registry_v1.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_bytes(
+        (
+            Path(__file__).parents[1]
+            / "config/research_contracts/stocks_strategy_timeframe_registry_v1.json"
+        ).read_bytes()
+    )
     candidate_id = "REC-FROZEN-1"
     output = root / "output" / "research"
     output.mkdir(parents=True)
@@ -127,9 +135,7 @@ def setup_signal_fixture(root: Path, monkeypatch: object) -> str:
     return candidate_id
 
 
-def test_signal_authority_is_separate_from_execution(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_signal_authority_is_separate_from_execution(tmp_path: Path, monkeypatch) -> None:
     candidate = setup_signal_fixture(tmp_path, monkeypatch)
     promotion = promote_manual_signals(
         tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE"
@@ -139,26 +145,16 @@ def test_signal_authority_is_separate_from_execution(
     assert promotion["execution_authority"] == "NONE"
 
 
-def test_scan_generates_stop_targets_and_zero_orders(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_scan_generates_stop_targets_and_zero_orders(tmp_path: Path, monkeypatch) -> None:
     candidate = setup_signal_fixture(tmp_path, monkeypatch)
-    promote_manual_signals(
-        tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE"
-    )
+    promote_manual_signals(tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE")
     report = signal_scan(tmp_path, maximum_signals=10)
     assert report["status"] == "GO"
     assert report["signal_count"] == 1
     signal = report["signals"][0]
-    assert Decimal(str(signal["stop_loss"])) < Decimal(
-        str(signal["preferred_entry"])
-    )
-    assert Decimal(str(signal["take_profit_1"])) > Decimal(
-        str(signal["preferred_entry"])
-    )
-    assert Decimal(str(signal["take_profit_2"])) > Decimal(
-        str(signal["take_profit_1"])
-    )
+    assert Decimal(str(signal["stop_loss"])) < Decimal(str(signal["preferred_entry"]))
+    assert Decimal(str(signal["take_profit_1"])) > Decimal(str(signal["preferred_entry"]))
+    assert Decimal(str(signal["take_profit_2"])) > Decimal(str(signal["take_profit_1"]))
     assert report["broker_calls"] == 0
     assert report["orders_generated"] == 0
     assert report["signal_authority"] == "MANUAL_ACTIONABLE"
@@ -167,24 +163,24 @@ def test_scan_generates_stop_targets_and_zero_orders(
     assert report["published_asset_count"] == 1
     assert report["published_active_asset_coverage_ratio"] == 1.0
     assert signal["contract_identity"]["cache_status"] == "FRESH"
-    assert signal["contract_identity"]["contract_source"] == (
-        "PHASE2_EXACT_STK_CACHE"
-    )
+    assert signal["contract_identity"]["contract_source"] == ("PHASE2_EXACT_STK_CACHE")
     assert signal["contract_identity"]["contract_hash"] == "A" * 64
+    assert signal["strategy_family"] == "ma_crossover"
+    timeframe_contract = signal["strategy_timeframe_contract"]
+    assert timeframe_contract["entry_timeframe"] == "1d"
+    assert timeframe_contract["setup_timeframe"] == "1d"
+    assert timeframe_contract["context_timeframes"] == []
+    assert timeframe_contract["declaration_status"] == "EXPLICIT_RESEARCH_ONLY"
+    assert timeframe_contract["multi_timeframe_edge_claimed"] is False
+    assert timeframe_contract["execution_authority"] == "NONE"
 
 
-def test_stale_contract_cache_cannot_authorize_signal(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_stale_contract_cache_cannot_authorize_signal(tmp_path: Path, monkeypatch) -> None:
     candidate = setup_signal_fixture(tmp_path, monkeypatch)
-    promote_manual_signals(
-        tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE"
-    )
+    promote_manual_signals(tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE")
     path = tmp_path / "output/ibkr/contracts/stocks.parquet"
     contracts = pd.read_parquet(path)
-    contracts["resolved_at"] = (
-        datetime.now(UTC) - timedelta(days=8)
-    ).isoformat()
+    contracts["resolved_at"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
     contracts.to_parquet(path, index=False)
 
     report = signal_scan(tmp_path, maximum_signals=10)
@@ -196,9 +192,7 @@ def test_stale_contract_cache_cannot_authorize_signal(
     assert signal["automatic_execution_allowed"] is False
     assert report["orders_generated"] == 0
     assert report["broker_calls"] == 0
-    stored = pd.read_parquet(
-        tmp_path / "output/signals/signal_history.parquet"
-    )
+    stored = pd.read_parquet(tmp_path / "output/signals/signal_history.parquet")
     assert stored.loc[0, "contract_identity"] == "{}"
 
 
@@ -219,9 +213,7 @@ def test_signal_parquet_normalizes_mixed_collection_types(
     ]
 
     _publish_signal_outputs(tmp_path, {"signals": rows}, rows)
-    stored = pd.read_parquet(
-        tmp_path / "output/signals/signal_history.parquet"
-    )
+    stored = pd.read_parquet(tmp_path / "output/signals/signal_history.parquet")
 
     assert stored["reasons"].tolist() == [
         '["ONE", "TWO"]',
@@ -233,13 +225,9 @@ def test_signal_parquet_normalizes_mixed_collection_types(
     ]
 
 
-def test_manual_execution_and_close_lifecycle(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_manual_execution_and_close_lifecycle(tmp_path: Path, monkeypatch) -> None:
     candidate = setup_signal_fixture(tmp_path, monkeypatch)
-    promote_manual_signals(
-        tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE"
-    )
+    promote_manual_signals(tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE")
     report = signal_scan(tmp_path)
     signal_id = report["signals"][0]["signal_id"]
     executed = signal_mark_executed(
@@ -260,13 +248,9 @@ def test_manual_execution_and_close_lifecycle(
     assert closed["execution_authority"] == "NONE"
 
 
-def test_manual_order_plan_is_whole_share_and_broker_free(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_manual_order_plan_is_whole_share_and_broker_free(tmp_path: Path, monkeypatch) -> None:
     candidate = setup_signal_fixture(tmp_path, monkeypatch)
-    promote_manual_signals(
-        tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE"
-    )
+    promote_manual_signals(tmp_path, strategy_id=candidate, approval="EXACT TEST PHRASE")
     scan = signal_scan(tmp_path)
     plan = signal_order_plan(
         tmp_path,
@@ -307,6 +291,14 @@ def test_frozen_shadow_can_publish_watchlist_without_manual_authority(
 def test_exploratory_one_hour_observer_is_watchlist_only_and_zero_quantity(
     tmp_path: Path,
 ) -> None:
+    registry = tmp_path / "config/research_contracts/stocks_strategy_timeframe_registry_v1.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_bytes(
+        (
+            Path(__file__).parents[1]
+            / "config/research_contracts/stocks_strategy_timeframe_registry_v1.json"
+        ).read_bytes()
+    )
     root = tmp_path / "output/research/phase11_14"
     root.mkdir(parents=True)
     now = datetime.now(UTC).replace(microsecond=0)
@@ -325,9 +317,7 @@ def test_exploratory_one_hour_observer_is_watchlist_only_and_zero_quantity(
                         "observer_tier": "EXPLORATORY_FORWARD_OBSERVER",
                         "portfolio_eligible": False,
                         "observation_status": "OBSERVATION_COMPLETE",
-                        "closed_bar_timestamp": (
-                            now - timedelta(hours=1)
-                        ).isoformat(),
+                        "closed_bar_timestamp": (now - timedelta(hours=1)).isoformat(),
                         "raw_active_signals": [
                             {
                                 "symbol": "DBC",
@@ -362,6 +352,9 @@ def test_exploratory_one_hour_observer_is_watchlist_only_and_zero_quantity(
     assert signal["execution_eligible"] is False
     assert signal["automatic_execution_allowed"] is False
     assert signal["suggested_quantity"] == Decimal("0")
+    assert signal["strategy_timeframe_contract"]["entry_timeframe"] == "1h"
+    assert signal["strategy_timeframe_contract"]["research_only"] is True
+    assert signal["strategy_timeframe_contract"]["execution_authority"] == "NONE"
     assert signal["broker_calls"] == 0
     assert signal["orders_generated"] == 0
     assert inventory == {
@@ -379,14 +372,7 @@ def test_four_hour_signal_uses_closed_four_hour_bars_with_provenance(
     survivors["survivors"][0]["timeframe"] = "4h"
     survivor_path.write_text(json.dumps(survivors), encoding="utf-8")
 
-    daily_path = (
-        tmp_path
-        / "data"
-        / "research"
-        / "critical_trading"
-        / "yfinance"
-        / "TEST.parquet"
-    )
+    daily_path = tmp_path / "data" / "research" / "critical_trading" / "yfinance" / "TEST.parquet"
     daily = pd.read_parquet(daily_path)
     daily["close"] = list(reversed(range(100, 400)))
     daily["open"] = daily["close"] + 0.5
@@ -394,9 +380,7 @@ def test_four_hour_signal_uses_closed_four_hour_bars_with_provenance(
     daily["low"] = daily["close"] - 1.0
     daily.to_parquet(daily_path, index=False)
 
-    start = pd.Timestamp(datetime.now(UTC)).floor("h") - pd.Timedelta(
-        hours=4 * 300
-    )
+    start = pd.Timestamp(datetime.now(UTC)).floor("h") - pd.Timedelta(hours=4 * 300)
     timestamps = pd.date_range(start=start, periods=301, freq="4h")
     close = pd.Series(range(100, 401), dtype=float)
     four_hour = pd.DataFrame(
@@ -477,12 +461,8 @@ def test_signal_status_counts_only_latest_version_per_strategy_asset_timeframe(
                     "timeframe": "4h",
                     "action": "WATCHLIST",
                     "lifecycle_status": "WATCHLIST",
-                    "data_timestamp": (
-                        now - timedelta(hours=4 - index)
-                    ).isoformat(),
-                    "expiration_timestamp": (
-                        now + timedelta(days=1)
-                    ).isoformat(),
+                    "data_timestamp": (now - timedelta(hours=4 - index)).isoformat(),
+                    "expiration_timestamp": (now + timedelta(days=1)).isoformat(),
                 }
             )
 
@@ -491,9 +471,7 @@ def test_signal_status_counts_only_latest_version_per_strategy_asset_timeframe(
     assert report["active_signals"] == 1
     assert report["unexpired_open_history_record_count"] == 2
     assert report["superseded_unexpired_signal_count"] == 1
-    assert report["active_signal_semantics"] == (
-        "LATEST_UNEXPIRED_PER_TICKER_STRATEGY_TIMEFRAME"
-    )
+    assert report["active_signal_semantics"] == ("LATEST_UNEXPIRED_PER_TICKER_STRATEGY_TIMEFRAME")
 
 
 def test_signal_store_refreshes_nonterminal_state_but_never_reopens_terminal(
@@ -645,9 +623,7 @@ def test_canonical_signal_registry_covers_broad_frozen_families() -> None:
 
 def test_broad_family_signals_use_closed_ohlcv_without_future_rows() -> None:
     length = 320
-    close = pd.Series(
-        [100.0 + index * 0.25 for index in range(length)]
-    )
+    close = pd.Series([100.0 + index * 0.25 for index in range(length)])
     close.iloc[-1] += 8.0
     high = close + 1.0
     low = close - 1.0
@@ -730,11 +706,7 @@ def _top5_fixture(root: Path) -> None:
                 "sector": sector,
                 "region": region,
                 "sleeve": (
-                    "stock"
-                    if index < 2
-                    else "etf_core"
-                    if index < 4
-                    else "commodity_security"
+                    "stock" if index < 2 else "etf_core" if index < 4 else "commodity_security"
                 ),
                 "opportunity_score": 0.90 - index * 0.03,
                 "components": {
@@ -757,9 +729,7 @@ def _top5_fixture(root: Path) -> None:
                 "timeframes": ["4h", "1d"],
                 "evidence_tiers": ["FROZEN_SHADOW"],
                 "shariah_status": (
-                    "SHARIAH_ELIGIBLE_PIT"
-                    if eligible
-                    else "SHARIAH_DATA_UNAVAILABLE"
+                    "SHARIAH_ELIGIBLE_PIT" if eligible else "SHARIAH_DATA_UNAVAILABLE"
                 ),
             }
         )
@@ -800,9 +770,7 @@ def _top5_fixture(root: Path) -> None:
             {
                 "ticker": row["ticker"],
                 **{
-                    other["ticker"]: (
-                        1.0 if other["ticker"] == row["ticker"] else 0.2
-                    )
+                    other["ticker"]: (1.0 if other["ticker"] == row["ticker"] else 0.2)
                     for other in opportunities
                 },
             }
@@ -834,15 +802,9 @@ def test_top5_publishes_raw_diversified_and_separate_eligibility(
     assert first["manual_signal_eligible"] is True
     assert first["automated_execution_eligible"] is False
     assert first["eligibility_status"] == "MANUAL_ACTIONABLE"
-    assert (
-        tmp_path / "output" / "signals" / "latest_raw_top_5.json"
-    ).exists()
-    assert (
-        tmp_path / "output" / "signals" / "latest_diversified_top_5.json"
-    ).exists()
-    assert (
-        tmp_path / "output" / "signals" / "latest_manual_order_plans.json"
-    ).exists()
+    assert (tmp_path / "output" / "signals" / "latest_raw_top_5.json").exists()
+    assert (tmp_path / "output" / "signals" / "latest_diversified_top_5.json").exists()
+    assert (tmp_path / "output" / "signals" / "latest_manual_order_plans.json").exists()
 
 
 def test_top5_never_fills_with_weak_opportunities(tmp_path: Path) -> None:
@@ -868,8 +830,10 @@ def test_top5_history_suppresses_unchanged_publication(tmp_path: Path) -> None:
     publish_top_signals(tmp_path, mode="diversified", limit=5)
 
     history = (
-        tmp_path / "output" / "signals" / "signal_history.jsonl"
-    ).read_text(encoding="utf-8").splitlines()
+        (tmp_path / "output" / "signals" / "signal_history.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     assert len(history) == 1
 
 
@@ -885,19 +849,14 @@ def test_top5_rotation_marks_persistent_without_changing_semantic_hash(
     assert second["rotation_summary"]["persistent_count"] == 5
     assert second["rotation_summary"]["material_change_count"] == 0
     assert first["content_hash"] == second["content_hash"]
-    assert all(
-        row["appearance_status"] == "PERSISTENT"
-        for row in second["signals"]
-    )
+    assert all(row["appearance_status"] == "PERSISTENT" for row in second["signals"])
 
 
 def test_top5_excludes_expired_signal_before_ranking(tmp_path: Path) -> None:
     _top5_fixture(tmp_path)
     path = tmp_path / "output" / "signals" / "latest_signals.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    payload["signals"][0]["expiration_timestamp"] = (
-        "2000-01-01T00:00:00+00:00"
-    )
+    payload["signals"][0]["expiration_timestamp"] = "2000-01-01T00:00:00+00:00"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     report = publish_top_signals(tmp_path, mode="raw", limit=5)
@@ -915,12 +874,8 @@ def test_top5_clamps_declared_expiry_to_one_hour_freshness_contract(
     payload["signals"][0].update(
         {
             "timeframe": "1h",
-            "data_timestamp": (
-                datetime.now(UTC) - timedelta(hours=13)
-            ).isoformat(),
-            "expiration_timestamp": (
-                datetime.now(UTC) + timedelta(days=365)
-            ).isoformat(),
+            "data_timestamp": (datetime.now(UTC) - timedelta(hours=13)).isoformat(),
+            "expiration_timestamp": (datetime.now(UTC) + timedelta(days=365)).isoformat(),
         }
     )
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -953,9 +908,7 @@ def test_top5_separates_signal_timeframe_from_confirmation_timeframes(
     assert first["timeframe"] == "4h"
     assert first["signal_timeframe"] == "4h"
     assert first["confirmation_timeframes"] == ["4h", "1d"]
-    assert datetime.fromisoformat(first["valid_until"]) == now + timedelta(
-        days=3
-    )
+    assert datetime.fromisoformat(first["valid_until"]) == now + timedelta(days=3)
 
 
 def test_top5_public_artifacts_contain_no_broker_identity_or_order_calls(
@@ -964,12 +917,9 @@ def test_top5_public_artifacts_contain_no_broker_identity_or_order_calls(
     _top5_fixture(tmp_path)
     publish_top_signals(tmp_path, mode="diversified", limit=5)
 
-    payload = (
-        tmp_path
-        / "output"
-        / "signals"
-        / "latest_top_5_publication.json"
-    ).read_text(encoding="utf-8")
+    payload = (tmp_path / "output" / "signals" / "latest_top_5_publication.json").read_text(
+        encoding="utf-8"
+    )
 
     assert "account_id" not in payload.lower()
     assert "broker_order_id" not in payload.lower()
@@ -981,18 +931,12 @@ def test_top5_specialized_collections_remain_read_only(
     tmp_path: Path,
 ) -> None:
     _top5_fixture(tmp_path)
-    opportunity_path = (
-        tmp_path / "output" / "portfolio" / "opportunity_ranking.json"
-    )
-    opportunities = json.loads(
-        opportunity_path.read_text(encoding="utf-8")
-    )
+    opportunity_path = tmp_path / "output" / "portfolio" / "opportunity_ranking.json"
+    opportunities = json.loads(opportunity_path.read_text(encoding="utf-8"))
     opportunities["opportunities"][2]["asset_type"] = "ETF"
     opportunities["opportunities"][3]["asset_type"] = "ETF"
     opportunities["opportunities"][4]["asset_type"] = "COMMODITY_ETF"
-    opportunity_path.write_text(
-        json.dumps(opportunities), encoding="utf-8"
-    )
+    opportunity_path.write_text(json.dumps(opportunities), encoding="utf-8")
     universe_path = tmp_path / "config" / "universes"
     universe_path.mkdir(parents=True)
     (universe_path / "broad_multi_asset_v1.json").write_text(
@@ -1014,12 +958,8 @@ def test_top5_specialized_collections_remain_read_only(
 
     stocks = publish_top_signals(tmp_path, mode="stocks", limit=5)
     etfs = publish_top_signals(tmp_path, mode="etfs", limit=5)
-    commodities = publish_top_signals(
-        tmp_path, mode="commodities", limit=5
-    )
-    automatic = publish_top_signals(
-        tmp_path, mode="auto-eligible", limit=5
-    )
+    commodities = publish_top_signals(tmp_path, mode="commodities", limit=5)
+    automatic = publish_top_signals(tmp_path, mode="auto-eligible", limit=5)
 
     assert {row["symbol"] for row in stocks["signals"]} == {
         "AAA",

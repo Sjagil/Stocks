@@ -1,0 +1,49 @@
+{
+  "schema": "rl_policy_contract_v1",
+  "version": "1.0.0",
+  "status": "FROZEN",
+  "mode": "SHADOW_ONLY",
+  "rl_live_enabled": false,
+  "policy_may_control_money": false,
+  "execution_authority": "NONE",
+  "fallback": "NO_RL_ACTION",
+  "canonical_algorithm": "SB3_CONTRIB_MASKABLE_PPO",
+  "canonical_environment": "FinanceSwingEnv",
+  "initial_policy_scope": {
+    "name": "ppo_stocks_swing",
+    "asset_class": "ETF",
+    "symbol": "SPUS",
+    "timeframe": "1d",
+    "evidence_scope": "UNRESTRICTED_RESEARCH_ONLY",
+    "reason": "BOUNDED_SINGLE_ASSET_CAUSAL_BASELINE_BEFORE_BROADER_ACTIVE_SWING"
+  },
+  "actions": [
+    "HOLD",
+    "OPEN_SMALL",
+    "OPEN_NORMAL",
+    "OPEN_LARGE",
+    "REDUCE_25",
+    "REDUCE_50",
+    "CLOSE",
+    "TIGHTEN_STOP"
+  ],
+  "hard_external_gates": [
+    "RISK_BUDGET",
+    "SHARIAH",
+    "TRADEABLE",
+    "LIQUIDITY",
+    "PORTFOLIO_CAPACITY",
+    "DATA_FRESH",
+    "LIVE_QUOTE",
+    "EXECUTION_AUTHORITY"
+  ],
+  "active_policy_frozen_between_promotions": true,
+  "challenger_may_self_promote": false,
+  "automatic_live_activation": false,
+  "inference_interval_seconds": 900,
+  "evaluation_interval_hours": 24,
+  "retraining_interval_hours": 24,
+  "minimum_new_closed_episodes": 100,
+  "broker_calls": 0,
+  "broker_writes": 0
+}

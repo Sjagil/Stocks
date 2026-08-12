@@ -35,10 +35,25 @@ def _episode(
     regime: str = "BULL_TREND_LOW_VOL",
 ) -> dict[str, object]:
     timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=index)
+    candidate_identity = f"CANDIDATE-{index:04d}"
     return {
         "schema": "active_swing_forward_episode_v1",
         "episode_id": f"ENTRY-{index:04d}",
         "feature_snapshot_hash": f"HASH-{index:04d}",
+        "setup_id": candidate_identity,
+        "candidate_identity": candidate_identity,
+        "candidate_unit": "ONE_NATURAL_STRATEGY_SETUP",
+        "setup_origin_timestamp": timestamp.isoformat(),
+        "strategy_id": "ACTIVE-SWING-TEST",
+        "strategy_dna_hash": "DNA-TEST",
+        "timeframe_evidence_hash": f"EVIDENCE-{index:04d}",
+        "negative_sampling_policy": "CANDIDATE_CONDITIONED_ONLY",
+        "strategy_timeframe_contract": {
+            "schema": "active_swing_strategy_timeframe_contract_v1",
+            "entry_timeframe": "1h",
+            "setup_timeframe": "4h",
+            "required_timeframes": ["1h", "4h"],
+        },
         "decision_timestamp": timestamp.isoformat(),
         "timeframe": "1h",
         "decision_contract": {

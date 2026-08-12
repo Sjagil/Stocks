@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping
 import numpy as np
 import pandas as pd
 
+from stocks.context.candidate_evidence import is_natural_strategy_candidate
 from stocks.execution.idempotency import stable_hash
 from stocks.research.evidence_throughput import (
     publish_evidence_throughput,
@@ -565,6 +566,7 @@ def _joined_forward_rows(project_root: Path) -> tuple[list[dict[str, Any]], list
         for row in _read_jsonl(project_root / PRIVATE_ROOT / "entry-episodes.jsonl")
         if row.get("schema") == "active_swing_forward_episode_v1"
         and row.get("feature_snapshot_hash")
+        and is_natural_strategy_candidate(row)
     ]
     outcomes = [
         row

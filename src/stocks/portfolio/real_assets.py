@@ -40,10 +40,14 @@ def active_swing_timeframe_context(
         "4h": 0.30,
         "2h": 0.20,
         "1h": 0.30,
+        "15m": 0.15,
     }
     observed = sorted({str(value).lower() for value in timeframes})
     score = min(sum(weights.get(value, 0.0) for value in observed), 1.0)
-    if {"1h", "4h"}.issubset(observed):
+    if "15m" in observed and ({"1h", "4h"} & set(observed)):
+        alignment = "TACTICAL_SWING_CONTEXT_AVAILABLE"
+        higher_timeframe_risk_multiplier = 1.0 if "1d" in observed else 0.9
+    elif {"1h", "4h"}.issubset(observed):
         alignment = "ACTIVE_SWING_ALIGNED"
         higher_timeframe_risk_multiplier = 1.0 if "1d" in observed else 0.9
     elif "1h" in observed or "4h" in observed:
@@ -62,7 +66,7 @@ def active_swing_timeframe_context(
             higher_timeframe_risk_multiplier
         ),
         "timing_15m_status": (
-            "UNAVAILABLE_RESEARCH_CONTRACT_FORBIDS_15M"
+            "AVAILABLE" if "15m" in observed else "NOT_OBSERVED"
         ),
         "standalone_entry_allowed": False,
     }
@@ -87,6 +91,7 @@ def real_asset_context(
     structure = str(
         metadata.get("product_structure") or "UNCLASSIFIED"
     ).upper()
+    identity = product_identity_context(metadata)
     structure_quality = {
         "PHYSICAL_BACKED_GRANTOR_TRUST": 0.85,
         "PHYSICAL_CLOSED_END_TRUST": 0.80,
@@ -95,6 +100,10 @@ def real_asset_context(
         "RESOURCE_EQUITY_FUND": 0.70,
         "OPERATING_COMPANY_EQUITY": 0.65,
     }.get(structure, 0.50)
+    if exposure == "PHYSICAL_COMMODITY" and not identity[
+        "physical_structure_verified"
+    ]:
+        structure_quality = min(structure_quality, 0.50)
     trend = _bounded(
         0.35 * float(components.get("signal_quality", 0.0))
         + 0.25 * float(components.get("timeframe_confirmation", 0.0))
@@ -118,6 +127,7 @@ def real_asset_context(
         ),
         "commodity_exposure_type": exposure,
         "product_structure": structure,
+        "product_identity": identity,
         "components": {
             "trend": round(trend, 6),
             "macro": round(macro, 6),
@@ -136,6 +146,46 @@ def real_asset_context(
         },
         "ranking_influence": "OBSERVATION_ONLY_PENDING_ABLATION",
         "standalone_entry_allowed": False,
+        "execution_authority": "NONE",
+    }
+
+
+def product_identity_context(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    exposure = str(
+        metadata.get("commodity_exposure_type") or "NONE"
+    ).upper()
+    physical_claim = exposure == "PHYSICAL_COMMODITY"
+    verified = bool(metadata.get("physical_structure_verified"))
+    structure_status = str(
+        metadata.get("product_identity_status")
+        or (
+            "UNVERIFIED_PHYSICAL_STRUCTURE"
+            if physical_claim
+            else "NOT_A_PHYSICAL_PRODUCT_CLAIM"
+        )
+    )
+    shariah_status = str(
+        metadata.get("shariah_product_status") or "ATTESTATION_REQUIRED"
+    )
+    blockers: list[str] = []
+    if physical_claim and not verified:
+        blockers.append("PHYSICAL_PRODUCT_STRUCTURE_NOT_CURRENTLY_VERIFIED")
+    if physical_claim and shariah_status != "SHARIAH_PRODUCT_ELIGIBLE_PIT":
+        blockers.append("SHARIAH_PRODUCT_ATTESTATION_REQUIRED")
+    return {
+        "schema": "commodity_product_identity_context_v1",
+        "physical_product_claim": physical_claim,
+        "physical_structure_verified": verified,
+        "structure_status": structure_status,
+        "screened_at": metadata.get("product_identity_screened_at"),
+        "expires_at": metadata.get("product_identity_expires_at"),
+        "official_source_count": int(
+            metadata.get("product_identity_source_count") or 0
+        ),
+        "shariah_product_status": shariah_status,
+        "shariah_is_separate_from_physical_structure": True,
+        "deployment_eligible": physical_claim and verified and not blockers,
+        "blockers": blockers,
         "execution_authority": "NONE",
     }
 

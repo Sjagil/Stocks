@@ -10,6 +10,10 @@ from typing import Any, Mapping
 import pandas as pd
 from filelock import FileLock
 
+from stocks.context.candidate_evidence import (
+    candidate_evidence_classification,
+    is_natural_strategy_candidate,
+)
 from stocks.execution.idempotency import stable_hash
 from stocks.research.phase11_9 import _load_current_frames
 
@@ -29,6 +33,7 @@ TERMINAL_STATES = frozenset(
     }
 )
 ENTRY_WINDOW_BARS = {
+    "15m": 8,
     "1h": 4,
     "2h": 3,
     "4h": 2,
@@ -37,6 +42,7 @@ ENTRY_WINDOW_BARS = {
     "1mo": 1,
 }
 MAX_HOLDING_BARS = {
+    "15m": 80,
     "1h": 40,
     "2h": 24,
     "4h": 15,
@@ -45,6 +51,7 @@ MAX_HOLDING_BARS = {
     "1mo": 3,
 }
 ENTRY_EXPIRY = {
+    "15m": timedelta(hours=4),
     "1h": timedelta(days=2),
     "2h": timedelta(days=3),
     "4h": timedelta(days=4),
@@ -56,6 +63,22 @@ ROUND_TRIP_COST_BPS = {
     "STOCK": 10.0,
     "ETF": 8.0,
     "COMMODITY_PROXY": 12.0,
+}
+OUTCOME_SOURCE_POLICY = {
+    "15m": {"15m"},
+    "1h": {"1h"},
+    "2h": {"1h", "2h"},
+    "4h": {"1h", "4h"},
+    "1d": {"1d"},
+    "1w": {"1d", "1w"},
+    "1mo": {"1d", "1mo"},
+}
+OUTCOME_BAR_LENGTH = {
+    "15m": pd.Timedelta(minutes=15),
+    "1h": pd.Timedelta(hours=1),
+    "2h": pd.Timedelta(hours=2),
+    "4h": pd.Timedelta(hours=4),
+    "1d": pd.Timedelta(days=1),
 }
 
 
@@ -79,6 +102,14 @@ def settle_entry_episodes(
         if row.get("schema") == "active_swing_forward_episode_v1"
         and row.get("feature_snapshot_hash")
     ]
+    natural_candidate_episodes = [
+        row for row in current_episodes if is_natural_strategy_candidate(row)
+    ]
+    natural_candidate_episode_ids = {
+        str(row["episode_id"])
+        for row in natural_candidate_episodes
+        if row.get("episode_id")
+    }
     legacy_episode_ids = {
         str(row.get("episode_id"))
         for row in episodes
@@ -188,6 +219,9 @@ def settle_entry_episodes(
         for row in pending_results
     )
     completed_count = len(terminal_ids)
+    natural_candidate_terminal_ids = (
+        terminal_ids & natural_candidate_episode_ids
+    )
     completion_ratio = (
         completed_count / expired_count if expired_count else 1.0
     )
@@ -204,15 +238,30 @@ def settle_entry_episodes(
         "status": status,
         "generated_at": now.isoformat(),
         "episode_count": len(current_episodes),
+        "natural_candidate_episode_count": len(natural_candidate_episodes),
+        "context_observation_episode_count": (
+            len(current_episodes) - len(natural_candidate_episodes)
+        ),
         "legacy_episode_count": len(episodes) - len(current_episodes),
         "terminal_episode_count": completed_count,
+        "natural_candidate_terminal_episode_count": len(
+            natural_candidate_terminal_ids
+        ),
         "new_terminal_episode_count": len(terminal),
+        "new_natural_candidate_terminal_episode_count": sum(
+            str(row.get("episode_id")) in natural_candidate_episode_ids
+            for row in terminal
+        ),
         "research_revision_count": len(revisions),
         "new_research_revision_count": len(research_revisions),
         "research_revision_state_counts": _counts(
             str(row.get("terminal_status")) for row in revisions.values()
         ),
         "pending_episode_count": len(current_episodes) - completed_count,
+        "natural_candidate_pending_episode_count": (
+            len(natural_candidate_episodes)
+            - len(natural_candidate_terminal_ids)
+        ),
         "research_observation_eligible_episode_count": sum(
             _research_observation_eligible(row) for row in current_episodes
         ),
@@ -313,6 +362,8 @@ def _evaluate_episode(
             {"symbol": str(episode.get("symbol") or "").upper()}
         )[:20],
         "strategy_id": episode.get("strategy_id"),
+        "candidate_identity": episode.get("candidate_identity"),
+        **candidate_evidence_classification(episode),
         "label_source": "COUNTERFACTUAL_BAR_PATH_OBSERVATION",
         "canonical_close": False,
         "canonical_fill_evidence": False,
@@ -825,6 +876,12 @@ def _load_single_provider_frame(
         f"provider=*/symbol={symbol}/interval={timeframe}/"
         "source_interval=*/bars.parquet"
     ):
+        source_interval = path.parent.name.removeprefix(
+            "source_interval="
+        )
+        allowed_sources = OUTCOME_SOURCE_POLICY.get(timeframe)
+        if allowed_sources is None or source_interval not in allowed_sources:
+            continue
         try:
             raw = pd.read_parquet(path)
         except (OSError, ValueError):
@@ -840,9 +897,41 @@ def _load_single_provider_frame(
         if timestamp_column is None:
             continue
         raw = raw.copy()
+        if "quality_status" in raw:
+            raw = raw.loc[
+                raw["quality_status"]
+                .astype(str)
+                .str.startswith("VALIDATED")
+            ]
+        for field in ("is_partial", "partial_bucket"):
+            if field in raw:
+                partial = raw[field].astype("boolean").fillna(False)
+                raw = raw.loc[~partial]
+        knowledge_field = next(
+            (
+                field
+                for field in ("ingested_at", "received_at", "fetched_at")
+                if field in raw
+            ),
+            None,
+        )
+        if knowledge_field is not None:
+            knowledge_at = pd.to_datetime(
+                raw[knowledge_field], utc=True, errors="coerce"
+            )
+            raw = raw.loc[
+                knowledge_at.notna()
+                & knowledge_at.le(pd.Timestamp(observed_at))
+            ]
         raw.index = pd.to_datetime(
             raw[timestamp_column], utc=True, errors="coerce"
         )
+        bar_length = OUTCOME_BAR_LENGTH.get(timeframe)
+        if bar_length is not None:
+            raw = raw.loc[
+                raw.index.notna()
+                & ((raw.index + bar_length) <= pd.Timestamp(observed_at))
+            ]
         prepared = _prepare_frame(raw)
         if prepared.empty:
             continue
@@ -859,6 +948,8 @@ def _load_single_provider_frame(
             ),
             "UNKNOWN",
         )
+        if provider not in provider_priority:
+            continue
         candidates.append(
             (
                 pd.Timestamp(prepared.index.max()),

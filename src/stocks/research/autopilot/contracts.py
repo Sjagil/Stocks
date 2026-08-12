@@ -10,10 +10,29 @@ from typing import Any
 import pandas as pd
 
 
-ALLOWED_SWING_TIMEFRAMES = ("1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo")
-FORBIDDEN_TIMEFRAMES = frozenset({"1m", "5m", "15m", "30m", "tick", "ticks"})
-TIMEFRAME_ALIASES = {"1month": "1mo", "month": "1mo", "1M": "1mo", "1wk": "1w", "60m": "1h"}
+ALLOWED_SWING_TIMEFRAMES = (
+    "15m",
+    "1h",
+    "2h",
+    "4h",
+    "6h",
+    "12h",
+    "1d",
+    "1w",
+    "1mo",
+)
+FORBIDDEN_TIMEFRAMES = frozenset({"1m", "5m", "30m", "tick", "ticks"})
+TIMEFRAME_ALIASES = {
+    "15min": "15m",
+    "1month": "1mo",
+    "month": "1mo",
+    "1M": "1mo",
+    "1wk": "1w",
+    "60m": "1h",
+}
 PRIMARY_TIMEFRAME_COMBINATIONS = (
+    ("15m", "1h", "4h"),
+    ("15m", "4h", "1d"),
     ("1h", "4h", "1d"),
     ("4h", "1d", "1w"),
     ("1d", "1w", None),
@@ -193,7 +212,9 @@ def causal_higher_timeframe_map(
     left = lower.copy()
     right = higher.copy()
     left["_decision_utc"] = pd.to_datetime(left[lower_decision_column], utc=True, errors="raise")
-    right["_available_utc"] = pd.to_datetime(right[higher_available_column], utc=True, errors="raise")
+    right["_available_utc"] = pd.to_datetime(
+        right[higher_available_column], utc=True, errors="raise"
+    )
     left = left.sort_values("_decision_utc")
     right = right.sort_values("_available_utc")
     feature_columns = [
@@ -212,9 +233,7 @@ def causal_higher_timeframe_map(
         direction="backward",
         allow_exact_matches=True,
     )
-    future = mapped["_available_utc"].notna() & (
-        mapped["_available_utc"] > mapped["_decision_utc"]
-    )
+    future = mapped["_available_utc"].notna() & (mapped["_available_utc"] > mapped["_decision_utc"])
     if bool(future.any()):
         raise AssertionError("higher-timeframe lookahead detected")
     return mapped.drop(columns=["_decision_utc", "_available_utc"])

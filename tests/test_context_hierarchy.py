@@ -417,6 +417,60 @@ def test_entry_observer_never_uses_bar_proxy_as_confirmation(
     assert report["execution_authority"] == "NONE"
 
 
+def test_entry_observer_reads_dedicated_tactical_candidate_artifact(
+    tmp_path: Path,
+) -> None:
+    tactical = _signal(NOW, "15m")
+    tactical.update(
+        {
+            "strategy_id": "ACTIVE-SWING-15M-BREAKOUT-V1",
+            "setup_id": "SETUP-TACTICAL-1",
+            "candidate_identity": "SETUP-TACTICAL-1",
+            "candidate_unit": "ONE_NATURAL_STRATEGY_SETUP",
+            "setup_origin_timestamp": (
+                NOW - timedelta(hours=1)
+            ).isoformat(),
+            "strategy_dna_hash": "D" * 64,
+            "timeframe_evidence_hash": "E" * 64,
+            "negative_sampling_policy": "CANDIDATE_CONDITIONED_ONLY",
+            "strategy_timeframe_contract": {
+                "schema": "active_swing_strategy_timeframe_contract_v1",
+                "entry_timeframe": "15m",
+                "setup_timeframe": "1h",
+                "required_timeframes": ["15m", "1h", "4h"],
+            },
+            "portfolio_eligible": False,
+            "financial_finalist": False,
+            "execution_authority": "NONE",
+        }
+    )
+    _json(
+        tmp_path / "output/signals/latest_signals.json",
+        {"schema": "manual_signal_scan_v1", "signals": []},
+    )
+    _json(
+        tmp_path / "output/signals/active_swing_15m_signals.json",
+        {
+            "schema": "active_swing_15m_candidate_generation_v1",
+            "signals": [tactical],
+            "portfolio_eligible": False,
+            "execution_authority": "NONE",
+        },
+    )
+
+    report = observe_shortlist(tmp_path, observed_at=NOW)
+
+    assert report["canonical_signal_input_count"] == 0
+    assert report["tactical_15m_signal_input_count"] == 1
+    assert report["combined_deduplicated_signal_input_count"] == 1
+    assert report["natural_strategy_candidate_count"] == 1
+    assert report["new_natural_candidate_episode_count"] == 1
+    assert report["observations"][0]["candidate_identity"] == (
+        "SETUP-TACTICAL-1"
+    )
+    assert report["observations"][0]["execution_authority"] == "NONE"
+
+
 def test_one_hour_confirmation_requires_current_four_hour_setup(
     tmp_path: Path,
 ) -> None:

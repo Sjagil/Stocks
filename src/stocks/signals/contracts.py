@@ -48,7 +48,9 @@ class SignalPlan:
     data_timestamp: datetime
     data_freshness: str
     strategy_id: str
+    strategy_family: str
     strategy_dna_hash: str
+    strategy_timeframe_contract: dict[str, Any] | None
     timeframe: str
     higher_timeframe_context: str
     action: SignalAction

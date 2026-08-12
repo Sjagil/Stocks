@@ -1,0 +1,97 @@
+{
+  "schema": "p4_pit_bundle_manifest_v1",
+  "target_universe": "US_LIQUID_SHARIAH_EQUITIES_V1",
+  "datasets": {
+    "security_master": {
+      "source": "C:/vendor-export/security_master.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "universe_membership": {
+      "source": "C:/vendor-export/universe_membership.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "delistings": {
+      "source": "C:/vendor-export/delistings.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "corporate_actions": {
+      "source": "C:/vendor-export/corporate_actions.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "fundamentals": {
+      "source": "C:/vendor-export/fundamentals.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "shariah_classification": {
+      "source": "C:/vendor-export/shariah_classification.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    },
+    "daily_prices": {
+      "source": "C:/vendor-export/daily_prices.parquet",
+      "attestation": {
+        "provider": "PROVIDER_LEGAL_NAME",
+        "source_version": "VENDOR_RELEASE_ID",
+        "license_id": "RESEARCH_LICENSE_ID",
+        "licensed_for_research": false,
+        "complete_history_attested": false,
+        "point_in_time_semantics_attested": false,
+        "obtained_at": "2026-08-11T00:00:00Z",
+        "operator": "OPERATOR_NAME"
+      }
+    }
+  }
+}

@@ -65,9 +65,7 @@ PRIORITY_STRATEGY_FAMILIES = (
 FAMILY_IMPLEMENTATION_MAP = {
     "quality_momentum_stocks": StrategyFamily.QUALITY_MOMENTUM.value,
     "trend_pullback_stocks": StrategyFamily.TREND_PULLBACK.value,
-    "volatility_contraction_breakout": (
-        StrategyFamily.VOLATILITY_CONTRACTION_BREAKOUT.value
-    ),
+    "volatility_contraction_breakout": (StrategyFamily.VOLATILITY_CONTRACTION_BREAKOUT.value),
     "etf_relative_strength_rotation": StrategyFamily.ETF_ROTATION.value,
     "commodity_etf_trend": StrategyFamily.COMMODITY_ETF_TREND.value,
 }
@@ -159,7 +157,7 @@ def taxonomy_coverage_report() -> dict[str, Any]:
         "scope": {
             "assets": ["STOCK", "ETF", "COMMODITY_ETF", "ETC"],
             "long_only": True,
-            "minimum_timeframe": "1h",
+            "minimum_timeframe": "15m",
             "allowed_timeframes": list(ALLOWED_SWING_TIMEFRAMES),
             "forbidden_timeframes": sorted(FORBIDDEN_TIMEFRAMES),
             "ai_or_machine_learning": False,

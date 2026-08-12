@@ -61,6 +61,7 @@ SOURCE_PATHS = (
     "output/portfolio/desired-portfolio-targets.json",
     "output/ibkr/live/authority-status.json",
     "output/ibkr/live/reconciliation.json",
+    "output/ibkr/phase9/reconciliation-audit.json",
     "output/ibkr/live/p0-execution-readiness.json",
     "output/ibkr/live/p0-2-readiness.json",
     "output/ibkr/live/automatic-cycle.json",
@@ -293,7 +294,18 @@ def _canonical_state(
     heartbeat = read_json(project_root / "runtime/heartbeat.json")
     last_cycle = read_json(project_root / "output/operations/last-cycle.json")
     authority = read_json(project_root / "output/ibkr/live/authority-status.json")
-    reconciliation = read_json(project_root / "output/ibkr/live/reconciliation.json")
+    live_reconciliation = read_json(
+        project_root / "output/ibkr/live/reconciliation.json"
+    )
+    phase9_reconciliation = read_json(
+        project_root / "output/ibkr/phase9/reconciliation-audit.json"
+    )
+    phase9_current = _phase9_observation_is_current(
+        phase9_reconciliation, as_of=generated_at
+    )
+    reconciliation = (
+        phase9_reconciliation if phase9_current else live_reconciliation
+    )
     p0 = read_json(project_root / "output/ibkr/live/p0-execution-readiness.json")
     p02 = read_json(project_root / "output/ibkr/live/p0-2-readiness.json")
     p2 = read_json(project_root / "output/portfolio/orchestrator/freeze-status.json")
@@ -318,9 +330,38 @@ def _canonical_state(
         ]
     )
     effective_authority = str(heartbeat.get("execution_authority") or "NONE")
+    broker_observed = (
+        phase9_current
+        or str(live_reconciliation.get("status") or "").upper() == "GO"
+    )
+    if phase9_current:
+        position_count = int(reconciliation.get("broker_position_count") or 0)
+        open_order_count = int(
+            reconciliation.get("broker_open_order_count") or 0
+        )
+        execution_count = int(reconciliation.get("broker_execution_count") or 0)
+        commission_count = int(
+            reconciliation.get("broker_commission_count") or 0
+        )
+        broker_writes = sum(
+            int(value or 0)
+            for value in dict(
+                reconciliation.get("broker_write_counters") or {}
+            ).values()
+        )
+        reconciliation_status = reconciliation.get("status")
+        reconciliation_detail = reconciliation.get("reconciliation_status")
+    else:
+        position_count = int(reconciliation.get("position_count") or 0)
+        open_order_count = int(reconciliation.get("open_order_count") or 0)
+        execution_count = int(reconciliation.get("execution_count") or 0)
+        commission_count = int(reconciliation.get("commission_count") or 0)
+        broker_writes = int(reconciliation.get("broker_write_calls") or 0)
+        reconciliation_status = reconciliation.get("status")
+        reconciliation_detail = reconciliation.get("reconciliation_status")
     return {
         "schema": "p3_canonical_current_state_v1",
-        "status": "GO" if reconciliation.get("status") == "GO" else "DEGRADED",
+        "status": "GO" if broker_observed else "DEGRADED",
         "generated_at": generated_at,
         "source_precedence": [
             "fresh broker reconciliation",
@@ -345,12 +386,25 @@ def _canonical_state(
             ),
         },
         "broker": {
-            "reconciliation_status": reconciliation.get("status"),
-            "reconciliation_detail": reconciliation.get("reconciliation_status"),
-            "positions": int(reconciliation.get("position_count") or 0),
-            "open_orders": int(reconciliation.get("open_order_count") or 0),
-            "executions": int(reconciliation.get("execution_count") or 0),
-            "commissions": int(reconciliation.get("commission_count") or 0),
+            "source": (
+                "PHASE9_READ_ONLY_AUDIT"
+                if phase9_current
+                else "LIVE_RECONCILIATION"
+            ),
+            "observation_current": broker_observed,
+            "reconciliation_status": reconciliation_status,
+            "reconciliation_detail": reconciliation_detail,
+            "operational_state_status": reconciliation.get(
+                "operational_broker_state_status"
+            ),
+            "canonical_execution_evidence_status": reconciliation.get(
+                "canonical_execution_evidence_status"
+            ),
+            "reconciliation_blocks_new_risk": reconciliation_status != "GO",
+            "positions": position_count,
+            "open_orders": open_order_count,
+            "executions": execution_count,
+            "commissions": commission_count,
             "snapshot_atomic": bool(
                 (reconciliation.get("public_summary") or {}).get("snapshot_atomic")
             ),
@@ -359,7 +413,7 @@ def _canonical_state(
                     "execution_history_complete"
                 )
             ),
-            "broker_writes": int(reconciliation.get("broker_write_calls") or 0),
+            "broker_writes": broker_writes,
         },
         "runtime": {
             "active": bool(machine.get("enabled"))
@@ -1228,13 +1282,7 @@ def _engineering_status(project_root: Path, generated_at: str) -> dict[str, Any]
     large = sorted(line_counts, key=lambda item: int(item["lines"]), reverse=True)
     git_present = (project_root / ".git").exists()
     ci_present = (project_root / ".github/workflows/product-ci.yml").exists()
-    operations_source = project_root / "src/stocks/operations/service.py"
-    operations_text = (
-        operations_source.read_text(encoding="utf-8")
-        if operations_source.exists()
-        else ""
-    )
-    p3_scheduler_present = '("p3", "publish")' in operations_text
+    p3_scheduler_present = _p3_scheduler_integration_present(project_root)
     policy_present = (
         project_root / "config/p3_unified_evidence_policy_v1.json"
     ).exists()
@@ -1369,10 +1417,11 @@ def _p3_readiness(
         ].get("multiple_testing_corrected_finalist_count", 0)
         > 0,
         "FORWARD_EVIDENCE_GO": financial_finalist_go,
-        "AI_INCREMENTAL_EVIDENCE_GO": ai_artifacts[
-            "output/ai/shadow/incremental-performance.json"
-        ].get("status")
-        not in {"NO_INCREMENTAL_EVIDENCE", "INSUFFICIENT_EVIDENCE"},
+        "AI_INCREMENTAL_EVIDENCE_GO": _ai_incremental_evidence_go(
+            ai_artifacts["output/ai/shadow/incremental-performance.json"].get(
+                "status"
+            )
+        ),
         "STRATEGY_PORTFOLIO_GO": portfolio_artifacts[
             "output/portfolio/strategy-portfolio.json"
         ].get("qualified_strategy_count", 0)
@@ -1430,6 +1479,46 @@ def _p3_readiness(
         "source_hashes": source_hashes,
         **AUTHORITY,
     }
+
+
+def _ai_incremental_evidence_go(status: Any) -> bool:
+    """Accept only the model tournament's explicit positive evidence state."""
+
+    return str(status or "").upper() == "SHADOW_VALIDATION_GO"
+
+
+def _phase9_observation_is_current(
+    payload: dict[str, Any],
+    *,
+    as_of: str,
+    maximum_age_minutes: float = 15.0,
+) -> bool:
+    if str(payload.get("broker_observation_status") or "").upper() != "GO":
+        return False
+    try:
+        observed = datetime.fromisoformat(str(payload["generated_at"]))
+        current = datetime.fromisoformat(as_of)
+    except (KeyError, TypeError, ValueError):
+        return False
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    age_minutes = (current.astimezone(UTC) - observed.astimezone(UTC)).total_seconds() / 60
+    return -2.0 <= age_minutes <= maximum_age_minutes
+
+
+def _p3_scheduler_integration_present(project_root: Path) -> bool:
+    for relative in (
+        "src/stocks/operations/service.py",
+        "src/stocks/operations/primary_refresh.py",
+    ):
+        path = project_root / relative
+        if path.is_file() and '("p3", "publish")' in path.read_text(
+            encoding="utf-8"
+        ):
+            return True
+    return False
 
 
 def _source_hashes(project_root: Path) -> dict[str, str | None]:

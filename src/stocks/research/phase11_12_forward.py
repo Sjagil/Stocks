@@ -15,7 +15,7 @@ import pandas as pd
 from stocks.research.autopilot.contracts import stable_hash
 
 
-SCHEMA = "phase11_12_prospective_forward_evidence_v1"
+SCHEMA = "phase11_12_prospective_forward_evidence_v2"
 COST_BPS_PER_SIDE = 50.0
 ACTIVE_STATUSES = ("PENDING_ENTRY", "OPEN", "PENDING_EXIT")
 
@@ -98,7 +98,14 @@ def _initialize(connection: sqlite3.Connection) -> None:
             episode_id TEXT PRIMARY KEY,
             strategy_id TEXT NOT NULL,
             formula TEXT NOT NULL,
+            strategy_family TEXT,
+            strategy_dna_hash TEXT,
             timeframe TEXT NOT NULL,
+            entry_timeframe TEXT,
+            setup_timeframe TEXT,
+            context_timeframes_json TEXT,
+            timeframe_contract_hash TEXT,
+            model_version TEXT,
             profile TEXT NOT NULL,
             asset_class TEXT NOT NULL,
             symbol TEXT NOT NULL,
@@ -130,6 +137,27 @@ def _initialize(connection: sqlite3.Connection) -> None:
         );
         """
     )
+    _ensure_episode_columns(connection)
+
+
+def _ensure_episode_columns(connection: sqlite3.Connection) -> None:
+    existing = {
+        str(row[1]) for row in connection.execute("PRAGMA table_info(episodes)")
+    }
+    definitions = {
+        "strategy_family": "TEXT",
+        "strategy_dna_hash": "TEXT",
+        "entry_timeframe": "TEXT",
+        "setup_timeframe": "TEXT",
+        "context_timeframes_json": "TEXT",
+        "timeframe_contract_hash": "TEXT",
+        "model_version": "TEXT",
+    }
+    for name, value_type in definitions.items():
+        if name not in existing:
+            connection.execute(
+                f"ALTER TABLE episodes ADD COLUMN {name} {value_type}"
+            )
 
 
 def _advance_pending_entries(
@@ -292,19 +320,31 @@ def _apply_current_desired_state(
             "trigger_at": trigger_at,
         }
         episode_id = "FWD-" + stable_hash(payload)[:24]
+        metadata = _forward_metadata(signal)
         connection.execute(
             """
             INSERT OR IGNORE INTO episodes (
-                episode_id, strategy_id, formula, timeframe, profile,
+                episode_id, strategy_id, formula, strategy_family,
+                strategy_dna_hash, timeframe, entry_timeframe,
+                setup_timeframe, context_timeframes_json,
+                timeframe_contract_hash, model_version, profile,
                 asset_class, symbol, status, signal_first_seen_at,
                 entry_trigger_at, cost_bps_per_side, last_seen_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_ENTRY', ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                      'PENDING_ENTRY', ?, ?, ?, ?)
             """,
             (
                 episode_id,
                 str(signal["strategy_id"]),
                 str(signal["formula"]),
+                metadata["strategy_family"],
+                metadata["strategy_dna_hash"],
                 str(signal["timeframe"]),
+                metadata["entry_timeframe"],
+                metadata["setup_timeframe"],
+                json.dumps(metadata["context_timeframes"]),
+                metadata["timeframe_contract_hash"],
+                metadata["model_version"],
                 str(signal["profile"]),
                 str(signal["asset_class"]),
                 str(signal["symbol"]),
@@ -406,6 +446,29 @@ def _build_report(
         )
         for strategy_id in strategy_ids
     ]
+    architecture_keys = sorted(
+        {
+            _architecture_key(row)
+            for row in episodes
+            if _architecture_binding_complete(row)
+        }
+    )
+    architectures = [
+        _metrics(
+            [
+                row
+                for row in closed
+                if _architecture_key(row) == architecture_key
+            ],
+            strategy_id=architecture_key,
+            all_rows=[
+                row
+                for row in episodes
+                if _architecture_key(row) == architecture_key
+            ],
+        )
+        for architecture_key in architecture_keys
+    ]
     aggregate = _metrics(closed, strategy_id="ALL", all_rows=episodes)
     observation_count = int(
         connection.execute(
@@ -444,6 +507,20 @@ def _build_report(
         "closed_episode_count": len(closed),
         "aggregate": aggregate,
         "strategies": strategies,
+        "architectures": architectures,
+        "architecture_binding_complete_count": sum(
+            _architecture_binding_complete(row) for row in episodes
+        ),
+        "architecture_binding_incomplete_count": sum(
+            not _architecture_binding_complete(row) for row in episodes
+        ),
+        "forward_records_preserve": [
+            "strategy_family",
+            "entry_timeframe",
+            "setup_timeframe",
+            "context_timeframes",
+            "model_version",
+        ],
         "promotion_policy": {
             "minimum_closed_episodes": 30,
             "minimum_net_profit_factor": 1.05,
@@ -505,12 +582,22 @@ def _metrics(
         and maximum_drawdown >= -0.25
     )
     example = all_rows[0] if all_rows else {}
+    architecture_binding_complete = bool(
+        all_rows and all(_architecture_binding_complete(row) for row in all_rows)
+    )
+    financial_gate = financial_gate and architecture_binding_complete
     return {
         "strategy_id": strategy_id,
         "formula": example.get("formula"),
         "timeframe": example.get("timeframe"),
         "profile": example.get("profile"),
         "asset_class": example.get("asset_class"),
+        "strategy_family": example.get("strategy_family"),
+        "entry_timeframe": example.get("entry_timeframe"),
+        "setup_timeframe": example.get("setup_timeframe"),
+        "context_timeframes": _context_timeframes(example),
+        "model_version": example.get("model_version"),
+        "architecture_binding_complete": architecture_binding_complete,
         "closed_episode_count": count,
         "positive_episode_count": len(positive),
         "negative_episode_count": len(negative),
@@ -525,6 +612,55 @@ def _metrics(
         "forward_financial_gate_pass": financial_gate,
         "authority_granted": False,
     }
+
+
+def _forward_metadata(signal: Mapping[str, Any]) -> dict[str, Any]:
+    contract = signal.get("strategy_timeframe_contract")
+    contract = contract if isinstance(contract, Mapping) else {}
+    context = sorted(
+        {
+            str(value).lower()
+            for value in contract.get("context_timeframes", [])
+            if str(value).strip()
+        }
+    )
+    return {
+        "strategy_family": str(signal.get("strategy_family") or "").strip(),
+        "strategy_dna_hash": str(signal.get("strategy_dna_hash") or "").strip(),
+        "entry_timeframe": str(contract.get("entry_timeframe") or "").lower(),
+        "setup_timeframe": str(contract.get("setup_timeframe") or "").lower(),
+        "context_timeframes": context,
+        "timeframe_contract_hash": stable_hash(dict(contract)) if contract else "",
+        "model_version": str(signal.get("model_version") or "").strip(),
+    }
+
+
+def _context_timeframes(row: Mapping[str, Any]) -> list[str]:
+    try:
+        value = json.loads(str(row.get("context_timeframes_json") or "[]"))
+    except json.JSONDecodeError:
+        return []
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+def _architecture_binding_complete(row: Mapping[str, Any]) -> bool:
+    return bool(
+        str(row.get("strategy_family") or "").strip()
+        and str(row.get("entry_timeframe") or "").strip()
+        and str(row.get("setup_timeframe") or "").strip()
+        and str(row.get("timeframe_contract_hash") or "").strip()
+        and str(row.get("model_version") or "").strip()
+    )
+
+
+def _architecture_key(row: Mapping[str, Any]) -> str:
+    return (
+        f"{row.get('strategy_family') or 'UNBOUND'}__"
+        f"{row.get('entry_timeframe') or 'UNBOUND'}_ENTRY__"
+        f"{row.get('setup_timeframe') or 'UNBOUND'}_SETUP__"
+        f"{'+'.join(_context_timeframes(row)) or 'NO_CONTEXT'}__"
+        f"MODEL_{row.get('model_version') or 'UNBOUND'}"
+    )
 
 
 def _observation_identity(observation: Mapping[str, Any]) -> str:

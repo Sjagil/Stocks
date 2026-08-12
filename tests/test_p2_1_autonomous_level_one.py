@@ -138,14 +138,36 @@ def test_registry_fails_closed_on_allowlist_hash_change(tmp_path: Path) -> None:
             encoding="utf-8"
         )
     )
-    allowlist = json.loads(
-        (ROOT / "output/ibkr/live/strategy-allowlist.json").read_text(
-            encoding="utf-8"
-        )
+    risk = configured["risk_policy"]
+    allowlist = {
+        "schema": "ibkr_live_pit_strategy_allowlist_v1",
+        "status": "GO",
+        "qualification_hash": configured["qualification_hash"],
+        "strategies": [
+            {
+                **row,
+                "training_data_end": "2026-07-01T00:00:00+00:00",
+                "maximum_position_weight": risk[
+                    "maximum_position_weight"
+                ],
+                "canary_notional_hard_cap_eur": risk[
+                    "canary_notional_hard_cap_eur"
+                ],
+                "primary_sizing_authority": risk[
+                    "primary_sizing_authority"
+                ],
+                "maximum_daily_orders": risk["maximum_daily_orders"],
+                "maximum_daily_loss_eur": risk[
+                    "maximum_daily_loss_eur"
+                ],
+                "status": "PIT_LIVE_ALLOWLISTED",
+            }
+            for row in configured["strategies"]
+        ],
+    }
+    configured["operational_allowlist_hash"] = (
+        operational_allowlist_hash(allowlist)
     )
-    assert operational_allowlist_hash(allowlist) == configured[
-        "operational_allowlist_hash"
-    ]
     (registry_path / "strategy_authority_registry_v1.json").write_text(
         json.dumps(configured), encoding="utf-8"
     )

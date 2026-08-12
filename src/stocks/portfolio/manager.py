@@ -46,12 +46,18 @@ from stocks.portfolio.real_assets import (
     opportunity_class,
     real_asset_context,
 )
+from stocks.portfolio.swing_status import publish_active_swing_product_status
+from stocks.portfolio.swing import resolve_signal_swing_contract
+from stocks.rl.portfolio import build_shadow_portfolio_rotation
 from stocks.signals.market_reference import (
     apply_market_reference,
     latest_market_reference,
 )
 from stocks.signals.freshness import evaluate_signal_freshness
 from stocks.signals.price_basis import normalize_research_signal_price_basis
+from stocks.signals.timeframe_contracts import (
+    declared_research_signal_timeframe_contract,
+)
 from stocks.screener.config import ScreenerConfig
 from stocks.research.stage0 import run_vectorized_stage0
 from stocks.universe import (
@@ -99,11 +105,11 @@ def active_portfolio_command(
         "stage0": report["vectorized_stage0"],
         "intelligence": report["cross_asset_intelligence"],
         "attribution": report["performance_attribution"],
-        "normalized-opportunities": report[
-            "normalized_opportunities"
-        ],
+        "normalized-opportunities": report["normalized_opportunities"],
         "overlap": report["overlap"],
         "targets": report["desired_targets"],
+        "swing-product": report["active_swing_product"],
+        "rl-rotation": report["rl_portfolio_rotation"],
     }
     if command not in sections:
         raise ValueError(f"UNKNOWN_ACTIVE_PORTFOLIO_COMMAND:{command}")
@@ -126,33 +132,18 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
     fundamentals = _fundamental_map(project_root)
     family_map = _strategy_family_map(project_root)
     macro = _read_json(project_root / "output/macro/score.json")
-    technical_regime = _read_json(
-        project_root / "output/dynamic/current_regime.json"
-    )
-    news = _read_json(
-        project_root
-        / "output/notifications/market-intelligence-digest.json"
-    )
-    news_events = _read_json(
-        project_root / "output/news/intelligence/portfolio-impact.json"
-    )
-    news_event_context = _news_event_overlay_map(
-        news_events, policy=policy
-    )
+    technical_regime = _read_json(project_root / "output/dynamic/current_regime.json")
+    news = _read_json(project_root / "output/notifications/market-intelligence-digest.json")
+    news_events = _read_json(project_root / "output/news/intelligence/portfolio-impact.json")
+    news_event_context = _news_event_overlay_map(news_events, policy=policy)
     overrides = _dynamic_overrides(project_root)
     strategy_weights = _dynamic_strategy_weights(project_root)
     market_context = load_market_context_map(project_root)
     asset_context = _asset_context_map(project_root)
-    current_positions, private_snapshot_status = _current_positions(
-        project_root
-    )
+    current_positions, private_snapshot_status = _current_positions(project_root)
     private_account = _private_account_state(project_root)
-    daily_target = _read_json(
-        project_root / "output/capital/daily_profit_target.json"
-    )
-    autopilot = _read_json(
-        project_root / "output/research/autopilot/status.json"
-    )
+    daily_target = _read_json(project_root / "output/capital/daily_profit_target.json")
+    autopilot = _read_json(project_root / "output/research/autopilot/status.json")
     contract_symbols = set(contracts)
     ranked = rank_opportunities(
         signals,
@@ -217,20 +208,18 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         dynamic_risk=dynamic_risk,
         whole_share_feasible_tickers=whole_share_feasible_tickers,
     )
-    opportunity_funnel["whole_share_candidate_preflight"] = {
-        key: value
-        for key, value in whole_share_preflight.items()
-        if key != "feasible_tickers"
-    }
-    opportunity_funnel["allocator_selected_count"] = len(
-        allocation.get("allocations", [])
+    rl_portfolio_rotation = build_shadow_portfolio_rotation(
+        project_root,
+        ranked=ranked,
+        allocation=allocation,
+        whole_share_preflight=whole_share_preflight,
     )
+    opportunity_funnel["whole_share_candidate_preflight"] = {
+        key: value for key, value in whole_share_preflight.items() if key != "feasible_tickers"
+    }
+    opportunity_funnel["allocator_selected_count"] = len(allocation.get("allocations", []))
     opportunity_funnel["content_hash"] = stable_hash(
-        {
-            key: value
-            for key, value in opportunity_funnel.items()
-            if key != "content_hash"
-        }
+        {key: value for key, value in opportunity_funnel.items() if key != "content_hash"}
     )
     position_management = _build_position_management(
         project_root,
@@ -245,10 +234,7 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         policy=policy,
         dynamic_overrides=overrides,
         daily_target=daily_target,
-        management_states={
-            row["ticker"]: row
-            for row in position_management["private_decisions"]
-        },
+        management_states={row["ticker"]: row for row in position_management["private_decisions"]},
     )
     private_sizing = build_private_sizing(
         project_root,
@@ -276,9 +262,7 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
     overlap_report = build_overlap_report(
         normalized_opportunities.get("combined_ranking", []),
         correlation,
-        threshold=float(
-            policy["portfolio"]["correlation_threshold"]
-        ),
+        threshold=float(policy["portfolio"]["correlation_threshold"]),
         etf_holdings=load_etf_holdings(project_root),
     )
     coverage_waterfall = build_coverage_waterfall(
@@ -288,12 +272,9 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         portfolio_symbols=(
             row["symbol"]
             for row in opportunity_funnel.get("watchlist_candidates", [])
-            if row.get("candidate_stage")
-            in {"PORTFOLIO_CANDIDATE", "EXECUTION_CANDIDATE"}
+            if row.get("candidate_stage") in {"PORTFOLIO_CANDIDATE", "EXECUTION_CANDIDATE"}
         ),
-        whole_share_symbols=whole_share_preflight.get(
-            "feasible_tickers", []
-        ),
+        whole_share_symbols=whole_share_preflight.get("feasible_tickers", []),
     )
     desired_targets = build_desired_portfolio_targets(
         project_root,
@@ -326,25 +307,19 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
             "research_target_weight": row["target_weight"],
             "approved_target_weight": 0.0,
             "correlation_penalty": row["correlation_penalty"],
-            "maximum_correlation_to_selected": row[
-                "maximum_correlation_to_selected"
-            ],
+            "maximum_correlation_to_selected": row["maximum_correlation_to_selected"],
             "stop_risk_pct": row["stop_risk_pct"],
             "entry_method": row["entry_method"],
             "stop_method": row["stop_method"],
             "exit_policy": row["exit_policy"],
-            "expected_holding_period": row[
-                "expected_holding_period"
-            ],
+            "expected_holding_period": row["expected_holding_period"],
             "execution_status": "OBSERVE_ONLY_AUTHORITY_NONE",
         }
         for row in allocation["allocations"]
     ]
     public_opportunities = [
         _public_opportunity(row)
-        for row in ranked[
-            : int(policy["ranking"]["maximum_published_opportunities"])
-        ]
+        for row in ranked[: int(policy["ranking"]["maximum_published_opportunities"])]
     ]
     capital_decisions = build_capital_decisions(
         current_positions,
@@ -360,47 +335,27 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(),
         "base_currency": str(policy.get("base_currency") or "EUR"),
         "current_position_count": len(current_positions),
-        "observed_current_gross_exposure": private_sizing[
-            "current_gross_exposure_pct"
-        ],
-        "research_target_exposure": allocation[
-            "research_target_exposure"
-        ],
+        "observed_current_gross_exposure": private_sizing["current_gross_exposure_pct"],
+        "research_target_exposure": allocation["research_target_exposure"],
         "research_cash_target_weight": allocation["cash_weight"],
         "approved_target_exposure": 0.0,
         "approved_cash_target_weight": 1.0,
         "portfolio_heat": allocation["portfolio_heat"],
         "maximum_portfolio_heat": allocation["maximum_portfolio_heat"],
-        "dynamic_risk_multiplier": dynamic_risk["multipliers"][
-            "combined"
-        ],
-        "technical_regime": technical_regime.get(
-            "regime", "UNAVAILABLE"
-        ),
+        "dynamic_risk_multiplier": dynamic_risk["multipliers"]["combined"],
+        "technical_regime": technical_regime.get("regime", "UNAVAILABLE"),
         "macro_status": macro.get("status", "UNAVAILABLE"),
         "news_status": news.get("status", "UNAVAILABLE"),
-        "news_event_intelligence_status": news_events.get(
-            "status", "UNAVAILABLE"
-        ),
+        "news_event_intelligence_status": news_events.get("status", "UNAVAILABLE"),
         "fundamental_symbol_count": len(fundamentals),
         "candidate_count": len(ranked),
-        "watchlist_candidate_count": opportunity_funnel[
-            "watchlist_candidate_count"
-        ],
-        "portfolio_candidate_count": opportunity_funnel[
-            "portfolio_candidate_count"
-        ],
-        "execution_candidate_count": opportunity_funnel[
-            "execution_candidate_count"
-        ],
-        "allocatable_candidate_count": sum(
-            not _research_blockers(row) for row in ranked
-        ),
+        "watchlist_candidate_count": opportunity_funnel["watchlist_candidate_count"],
+        "portfolio_candidate_count": opportunity_funnel["portfolio_candidate_count"],
+        "execution_candidate_count": opportunity_funnel["execution_candidate_count"],
+        "allocatable_candidate_count": sum(not _research_blockers(row) for row in ranked),
         "formal_action_counts": capital_decisions["action_counts"],
         "financial_values_public": False,
-        "private_financial_state_reference": (
-            "data/portfolio/private/current-state.json"
-        ),
+        "private_financial_state_reference": ("data/portfolio/private/current-state.json"),
         "automatic_execution_allowed": False,
         "execution_authority": "NONE",
         "broker_write_calls": 0,
@@ -409,64 +364,36 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "schema": "active_portfolio_risk_v1",
         "status": allocation["status"],
         "research_portfolio_heat": allocation["portfolio_heat"],
-        "observed_current_portfolio_heat": private_sizing[
-            "current_portfolio_heat"
-        ],
+        "observed_current_portfolio_heat": private_sizing["current_portfolio_heat"],
         "maximum_portfolio_heat": allocation["maximum_portfolio_heat"],
-        "research_target_exposure": allocation[
-            "research_target_exposure"
-        ],
-        "whole_share_shadow_target_exposure": private_sizing[
-            "target_gross_exposure_pct"
-        ],
-        "observed_current_gross_exposure": private_sizing[
-            "current_gross_exposure_pct"
-        ],
+        "research_target_exposure": allocation["research_target_exposure"],
+        "whole_share_shadow_target_exposure": private_sizing["target_gross_exposure_pct"],
+        "observed_current_gross_exposure": private_sizing["current_gross_exposure_pct"],
         "approved_target_exposure": approved_exposure,
-        "estimated_annualized_volatility": allocation[
-            "estimated_annualized_volatility"
-        ],
-        "maximum_pairwise_correlation": allocation[
-            "maximum_pairwise_correlation"
-        ],
-        "effective_position_count": allocation[
-            "effective_position_count"
-        ],
+        "estimated_annualized_volatility": allocation["estimated_annualized_volatility"],
+        "maximum_pairwise_correlation": allocation["maximum_pairwise_correlation"],
+        "effective_position_count": allocation["effective_position_count"],
         "portfolio_heat_gate": allocation["portfolio_heat_gate"],
         "correlation_gate": allocation["correlation_gate"],
         "daily_profit_target_throttle": _target_throttle(daily_target),
-        "dynamic_risk_multiplier": dynamic_risk["multipliers"][
-            "combined"
-        ],
-        "dynamic_maximum_positions": dynamic_risk[
-            "dynamic_research_maximum_positions"
-        ],
-        "operational_maximum_positions": dynamic_risk[
-            "operational_maximum_positions"
-        ],
+        "dynamic_risk_multiplier": dynamic_risk["multipliers"]["combined"],
+        "dynamic_maximum_positions": dynamic_risk["dynamic_research_maximum_positions"],
+        "operational_maximum_positions": dynamic_risk["operational_maximum_positions"],
         "authority": "NONE",
     }
     exposures = {
         "schema": "active_portfolio_exposures_v1",
         "status": "GO",
-        "research_gross_exposure": allocation[
-            "research_target_exposure"
-        ],
-        "whole_share_shadow_gross_exposure": private_sizing[
-            "target_gross_exposure_pct"
-        ],
-        "observed_current_gross_exposure": private_sizing[
-            "current_gross_exposure_pct"
-        ],
+        "research_gross_exposure": allocation["research_target_exposure"],
+        "whole_share_shadow_gross_exposure": private_sizing["target_gross_exposure_pct"],
+        "observed_current_gross_exposure": private_sizing["current_gross_exposure_pct"],
         "approved_gross_exposure": 0.0,
         "research_cash_weight": allocation["cash_weight"],
         "approved_cash_weight": 1.0,
         "sleeve_weights": allocation["sleeve_weights"],
         "sector_weights": allocation["sector_weights"],
         "region_weights": allocation["region_weights"],
-        "correlation_cluster_weights": allocation[
-            "correlation_cluster_weights"
-        ],
+        "correlation_cluster_weights": allocation["correlation_cluster_weights"],
         "asset_class_weights": allocation["asset_class_weights"],
         "margin_enabled": False,
         "leverage_enabled": False,
@@ -482,12 +409,8 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "new_candidate_count": len(public_allocations),
         "target_allocations": public_allocations,
         "private_whole_share_plan_status": private_sizing["status"],
-        "whole_share_target_position_count": private_sizing[
-            "target_position_count"
-        ],
-        "netted_security_count": private_sizing[
-            "netted_security_count"
-        ],
+        "whole_share_target_position_count": private_sizing["target_position_count"],
+        "netted_security_count": private_sizing["netted_security_count"],
         "estimated_turnover_pct": private_sizing["turnover_pct"],
         "turnover_gate": private_sizing["turnover_gate"],
         "automatic_submission": False,
@@ -502,67 +425,39 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "policy_schema": policy["schema"],
         "signal_count": len(signals),
         "opportunity_count": len(ranked),
-        "watchlist_candidate_count": opportunity_funnel[
-            "watchlist_candidate_count"
-        ],
-        "portfolio_candidate_count": opportunity_funnel[
-            "portfolio_candidate_count"
-        ],
-        "execution_candidate_count": opportunity_funnel[
-            "execution_candidate_count"
-        ],
-        "allocatable_opportunity_count": sum(
-            not _research_blockers(row)
-            for row in ranked
-        ),
-        "execution_ready_opportunity_count": sum(
-            not row["deployment_blockers"] for row in ranked
-        ),
+        "watchlist_candidate_count": opportunity_funnel["watchlist_candidate_count"],
+        "portfolio_candidate_count": opportunity_funnel["portfolio_candidate_count"],
+        "execution_candidate_count": opportunity_funnel["execution_candidate_count"],
+        "allocatable_opportunity_count": sum(not _research_blockers(row) for row in ranked),
+        "execution_ready_opportunity_count": sum(not row["deployment_blockers"] for row in ranked),
         "robustness_survivor_opportunity_count": sum(
-            "ROBUSTNESS_SURVIVOR" in row["evidence_tiers"]
-            for row in ranked
+            "ROBUSTNESS_SURVIVOR" in row["evidence_tiers"] for row in ranked
         ),
         "strategy_family_count": len(
-            {
-                family
-                for row in ranked
-                for family in row["strategy_families"]
-            }
+            {family for row in ranked for family in row["strategy_families"]}
         ),
         "observed_timeframes": sorted(
-            {
-                timeframe
-                for row in ranked
-                for timeframe in row["timeframes"]
-            }
+            {timeframe for row in ranked for timeframe in row["timeframes"]}
         ),
         "scanned_signal_timeframes": sorted(
-            {
-                str(row.get("timeframe") or "unknown")
-                for row in signals
-            }
+            {str(row.get("timeframe") or "unknown") for row in signals}
         ),
         "positive_signal_timeframes": sorted(
             {
                 str(row.get("timeframe") or "unknown")
                 for row in signals
-                if str(row.get("action", "")).upper()
-                in POSITIVE_ACTIONS
+                if str(row.get("action", "")).upper() in POSITIVE_ACTIONS
             }
         ),
         "price_invalidated_signal_timeframes": sorted(
             {
                 str(row.get("timeframe") or "unknown")
                 for row in signals
-                if str(row.get("price_validity_status", "")).startswith(
-                    "CURRENT_"
-                )
+                if str(row.get("price_validity_status", "")).startswith("CURRENT_")
                 and str(row.get("action", "")).upper() == "AVOID"
             }
         ),
-        "signal_freshness_policy": (
-            "EXCHANGE_SESSION_AWARE_SIGNAL_EXPIRY_V1"
-        ),
+        "signal_freshness_policy": ("EXCHANGE_SESSION_AWARE_SIGNAL_EXPIRY_V1"),
         "contract_resolved_symbol_count": len(contract_symbols),
         "current_position_count": len(current_positions),
         "private_position_snapshot_status": private_snapshot_status,
@@ -570,51 +465,25 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "private_whole_share_sizing_status": private_sizing["status"],
         "dynamic_risk_status": dynamic_risk["status"],
         "equity_band": dynamic_risk["equity_band"],
-        "dynamic_research_maximum_positions": dynamic_risk[
-            "dynamic_research_maximum_positions"
-        ],
-        "operational_maximum_positions": dynamic_risk[
-            "operational_maximum_positions"
-        ],
-        "security_netting_status": private_sizing[
-            "security_netting_status"
-        ],
+        "dynamic_research_maximum_positions": dynamic_risk["dynamic_research_maximum_positions"],
+        "operational_maximum_positions": dynamic_risk["operational_maximum_positions"],
+        "security_netting_status": private_sizing["security_netting_status"],
         "append_only_action_ledger_status": lifecycle["status"],
-        "position_management_status": position_management[
-            "public_audit"
-        ]["status"],
+        "position_management_status": position_management["public_audit"]["status"],
         "macro_status": macro.get("status", "UNAVAILABLE"),
         "news_status": news.get("status", "UNAVAILABLE"),
-        "news_event_intelligence_status": news_events.get(
-            "status", "UNAVAILABLE"
-        ),
-        "news_adjusted_opportunity_count": news_overlay_audit[
-            "adjusted_opportunity_count"
-        ],
-        "news_hard_risk_review_count": news_overlay_audit[
-            "hard_risk_review_count"
-        ],
+        "news_event_intelligence_status": news_events.get("status", "UNAVAILABLE"),
+        "news_adjusted_opportunity_count": news_overlay_audit["adjusted_opportunity_count"],
+        "news_hard_risk_review_count": news_overlay_audit["hard_risk_review_count"],
         "fundamental_symbol_count": len(fundamentals),
         "multilayer_confluence_status": confluence_audit["status"],
-        "multilayer_confluence_counts": confluence_audit[
-            "status_counts"
-        ],
-        "strategy_generator_status": autopilot.get(
-            "status", "UNAVAILABLE"
-        ),
-        "registered_strategy_dna_count": int(
-            autopilot.get("bulk_strategy_catalog_count", 0) or 0
-        ),
-        "registered_research_trial_count": int(
-            autopilot.get("bulk_trial_count", 0) or 0
-        ),
-        "continuous_strategy_research": (
-            autopilot.get("status") == "GO"
-        ),
+        "multilayer_confluence_counts": confluence_audit["status_counts"],
+        "strategy_generator_status": autopilot.get("status", "UNAVAILABLE"),
+        "registered_strategy_dna_count": int(autopilot.get("bulk_strategy_catalog_count", 0) or 0),
+        "registered_research_trial_count": int(autopilot.get("bulk_trial_count", 0) or 0),
+        "continuous_strategy_research": (autopilot.get("status") == "GO"),
         "automatic_live_strategy_promotion": False,
-        "p1_coverage_status": coverage_waterfall.get(
-            "status", "NO_GO"
-        ),
+        "p1_coverage_status": coverage_waterfall.get("status", "NO_GO"),
         "p1_stage0_status": stage0.get("status", "NO_GO"),
         "normalized_cross_asset_opportunity_count": (
             normalized_opportunities.get("opportunity_count", 0)
@@ -629,6 +498,14 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "broker_write_calls": 0,
         "live_trading_started": False,
     }
+    active_swing_product = publish_active_swing_product_status(
+        project_root,
+        signals=signals,
+        ranked=ranked,
+        normalized_opportunities=normalized_opportunities,
+        opportunity_funnel=opportunity_funnel,
+        current_positions=current_positions,
+    )
     report = {
         "schema": "active_multi_asset_portfolio_plan_v1",
         "status": "GO",
@@ -665,9 +542,7 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "target_allocation": {
             "schema": "target_allocation_v2",
             "status": allocation["status"],
-            "research_target_exposure": allocation[
-                "research_target_exposure"
-            ],
+            "research_target_exposure": allocation["research_target_exposure"],
             "approved_target_exposure": 0.0,
             "research_cash_target_weight": allocation["cash_weight"],
             "cash_target_weight": 1.0,
@@ -691,22 +566,18 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
         "normalized_opportunities": normalized_opportunities,
         "overlap": overlap_report,
         "desired_targets": desired_targets,
+        "active_swing_product": active_swing_product,
+        "rl_portfolio_rotation": rl_portfolio_rotation,
         "position_management": position_management["public_audit"],
         "confluence": confluence_audit,
         "news_overlay": news_overlay_audit,
         "sizing_audit": {
             "schema": "private_whole_share_sizing_public_audit_v1",
             "status": private_sizing["status"],
-            "account_equity_observed": private_account[
-                "equity_observed"
-            ],
-            "available_funds_observed": private_account[
-                "available_funds_observed"
-            ],
+            "account_equity_observed": private_account["equity_observed"],
+            "available_funds_observed": private_account["available_funds_observed"],
             "current_position_count": len(current_positions),
-            "target_position_count": private_sizing[
-                "target_position_count"
-            ],
+            "target_position_count": private_sizing["target_position_count"],
             "whole_share_feasible_candidate_count": private_sizing[
                 "whole_share_feasible_candidate_count"
             ],
@@ -717,21 +588,11 @@ def build_active_portfolio_report(project_root: Path) -> dict[str, Any]:
             "small_account_whole_share_mode": private_sizing.get(
                 "small_account_whole_share_mode", False
             ),
-            "netted_security_count": private_sizing[
-                "netted_security_count"
-            ],
-            "whole_share_violation_count": private_sizing[
-                "whole_share_violation_count"
-            ],
-            "negative_cash_violation_count": private_sizing[
-                "negative_cash_violation_count"
-            ],
-            "current_gross_exposure_pct": private_sizing[
-                "current_gross_exposure_pct"
-            ],
-            "target_gross_exposure_pct": private_sizing[
-                "target_gross_exposure_pct"
-            ],
+            "netted_security_count": private_sizing["netted_security_count"],
+            "whole_share_violation_count": private_sizing["whole_share_violation_count"],
+            "negative_cash_violation_count": private_sizing["negative_cash_violation_count"],
+            "current_gross_exposure_pct": private_sizing["current_gross_exposure_pct"],
+            "target_gross_exposure_pct": private_sizing["target_gross_exposure_pct"],
             "turnover_pct": private_sizing["turnover_pct"],
             "turnover_gate": private_sizing["turnover_gate"],
             "financial_values_public": False,
@@ -816,8 +677,7 @@ def rank_opportunities(
             for item in selected
         )
         deployment_eligible_source = any(
-            bool(item.get("_deployment_eligible_source", False))
-            for item in selected
+            bool(item.get("_deployment_eligible_source", False)) for item in selected
         )
         evidence_tiers = sorted(
             {
@@ -839,9 +699,7 @@ def rank_opportunities(
                 for item in selected
             }
         )
-        timeframes = sorted(
-            {str(item.get("timeframe") or "unknown") for item in selected}
-        )
+        timeframes = sorted({str(item.get("timeframe") or "unknown") for item in selected})
         family_confidences: dict[str, float] = defaultdict(float)
         weighted_family_confidences: dict[str, tuple[float, float]] = {}
         for item in selected:
@@ -868,25 +726,17 @@ def rank_opportunities(
                 )
         confidences = list(family_confidences.values())
         raw_signal_quality = (
-            float(np.mean(sorted(confidences, reverse=True)[:5]))
-            if confidences
-            else 0.0
+            float(np.mean(sorted(confidences, reverse=True)[:5])) if confidences else 0.0
         )
-        allocated = [
-            value
-            for value in weighted_family_confidences.values()
-            if value[1] > 0
-        ]
+        allocated = [value for value in weighted_family_confidences.values() if value[1] > 0]
         allocated_weight = sum(value[1] for value in allocated)
         if allocated_weight > 0:
-            weighted_signal_quality = sum(
-                confidence * allocation_weight
-                for confidence, allocation_weight in allocated
-            ) / allocated_weight
-            allocation_strength = min(1.0, allocated_weight / 0.20)
-            signal_quality = weighted_signal_quality * (
-                0.70 + 0.30 * allocation_strength
+            weighted_signal_quality = (
+                sum(confidence * allocation_weight for confidence, allocation_weight in allocated)
+                / allocated_weight
             )
+            allocation_strength = min(1.0, allocated_weight / 0.20)
+            signal_quality = weighted_signal_quality * (0.70 + 0.30 * allocation_strength)
             strategy_weight_status = "DYNAMIC_WEIGHTED"
         else:
             weighted_signal_quality = raw_signal_quality
@@ -896,13 +746,7 @@ def rank_opportunities(
         family_breadth = min(len(families) / 4.0, 1.0)
         timeframe_context = active_swing_timeframe_context(timeframes)
         timeframe_confirmation = float(timeframe_context["score"])
-        reasons = sorted(
-            {
-                str(reason)
-                for item in selected
-                for reason in item.get("reasons", [])
-            }
-        )
+        reasons = sorted({str(reason) for item in selected for reason in item.get("reasons", [])})
         relative_strength = _reason_score(
             reasons,
             ("RELATIVE", "MOMENTUM", "LEADERSHIP", "ROTATION"),
@@ -923,9 +767,7 @@ def rank_opportunities(
         )
         fundamental = fundamentals.get(ticker, {})
         metadata = _metadata(ticker, fundamental, contracts, policy)
-        raw_fundamental_score = _optional_number(
-            fundamental.get("fundamental_score")
-        )
+        raw_fundamental_score = _optional_number(fundamental.get("fundamental_score"))
         fundamental_required = bool(
             metadata["asset_type"] == "STOCK"
             and policy.get("multi_layer_confluence", {}).get(
@@ -954,11 +796,9 @@ def rank_opportunities(
             generic_regime_fit=generic_regime_fit,
         )
         macro_confidence = float(macro_layer["confidence"])
-        regime_fit = (
-            generic_regime_fit * (1.0 - 0.5 * macro_confidence)
-            + float(macro_layer["score"])
-            * (0.5 * macro_confidence)
-        )
+        regime_fit = generic_regime_fit * (1.0 - 0.5 * macro_confidence) + float(
+            macro_layer["score"]
+        ) * (0.5 * macro_confidence)
         technical_confluence_score = (
             0.35 * signal_quality
             + 0.20 * timeframe_confirmation
@@ -969,8 +809,7 @@ def rank_opportunities(
             technical_score=technical_confluence_score,
             fundamental_score=(
                 fundamental_quality
-                if raw_fundamental_score is not None
-                or not fundamental_required
+                if raw_fundamental_score is not None or not fundamental_required
                 else None
             ),
             fundamental_required=fundamental_required,
@@ -980,17 +819,11 @@ def rank_opportunities(
             config=policy.get("multi_layer_confluence"),
         )
         confluence["macro_source"] = macro_layer["source"]
-        confluence["transmission_group"] = symbol_asset_context.get(
-            "transmission_group"
-        )
+        confluence["transmission_group"] = symbol_asset_context.get("transmission_group")
         confluence["asset_context_hash"] = (
-            stable_hash(symbol_asset_context)
-            if symbol_asset_context
-            else None
+            stable_hash(symbol_asset_context) if symbol_asset_context else None
         )
-        event_risk, negative_event = _event_risk(
-            ticker, news_map, news
-        )
+        event_risk, negative_event = _event_risk(ticker, news_map, news)
         event_overlay = news_event_context.get(
             ticker,
             {
@@ -1001,23 +834,20 @@ def rank_opportunities(
                 "execution_authority": "NONE",
             },
         )
-        freshness = all(
-            str(item.get("data_freshness", "FRESH")) != "STALE"
-            for item in selected
-        )
+        freshness = all(str(item.get("data_freshness", "FRESH")) != "STALE" for item in selected)
         preferred = max(
             selected,
             key=lambda item: _number(item.get("confidence_score")),
         )
+        swing_contract = resolve_signal_swing_contract(
+            selected,
+            symbol=ticker,
+        )
         contract_resolved = ticker in contracts
         signal_currency = str(
-            metadata.get("currency")
-            or preferred.get("currency")
-            or "UNKNOWN"
+            metadata.get("currency") or preferred.get("currency") or "UNKNOWN"
         ).upper()
-        contract_currency = str(
-            contracts.get(ticker, {}).get("currency") or "UNKNOWN"
-        ).upper()
+        contract_currency = str(contracts.get(ticker, {}).get("currency") or "UNKNOWN").upper()
         contract_currency_mismatch = (
             contract_resolved
             and signal_currency not in {"", "UNKNOWN"}
@@ -1025,22 +855,14 @@ def rank_opportunities(
             and signal_currency != contract_currency
         )
         symbol_market_context = (market_context or {}).get(ticker, {})
-        context_components = symbol_market_context.get(
-            "ranking_components", {}
-        )
+        context_components = symbol_market_context.get("ranking_components", {})
         shariah = _resolved_shariah_status(
             fundamental,
             selected,
         )
-        data_quality_penalty = (
-            0.0
-            if freshness
-            else float(penalty_policy["data_quality"])
-        )
+        data_quality_penalty = 0.0 if freshness else float(penalty_policy["data_quality"])
         contract_penalty = (
-            0.0
-            if contract_resolved
-            else float(penalty_policy["unresolved_contract"])
+            0.0 if contract_resolved else float(penalty_policy["unresolved_contract"])
         )
         components = {
             "signal_quality": signal_quality,
@@ -1062,43 +884,30 @@ def rank_opportunities(
         }
         class_name = opportunity_class(metadata, families)
         real_asset = real_asset_context(metadata, components)
-        gross_score = sum(
-            float(weights[key]) * value
-            for key, value in components.items()
-        )
+        gross_score = sum(float(weights[key]) * value for key, value in components.items())
         penalties = {
-            "event_risk": event_risk
-            * float(penalty_policy["event_risk"]),
+            "event_risk": event_risk * float(penalty_policy["event_risk"]),
             "data_quality": data_quality_penalty,
             "unresolved_contract": contract_penalty,
         }
-        base_score_without_confluence = _bounded(
-            gross_score - sum(penalties.values())
-        )
+        base_score_without_confluence = _bounded(gross_score - sum(penalties.values()))
         confluence_only_score = _bounded(
-            base_score_without_confluence
-            * float(confluence["ranking_multiplier"])
+            base_score_without_confluence * float(confluence["ranking_multiplier"])
         )
-        news_score_adjustment = float(
-            event_overlay.get("ranking_adjustment") or 0.0
-        )
+        news_score_adjustment = float(event_overlay.get("ranking_adjustment") or 0.0)
         score = _bounded(confluence_only_score + news_score_adjustment)
         management_blockers: list[str] = []
         if not contract_resolved:
             management_blockers.append("CONTRACT_IDENTITY_REQUIRED")
         if contract_currency_mismatch:
-            management_blockers.append(
-                "SIGNAL_CONTRACT_CURRENCY_MISMATCH"
-            )
+            management_blockers.append("SIGNAL_CONTRACT_CURRENCY_MISMATCH")
         if not freshness:
             management_blockers.append("CURRENT_DATA_STALE")
         if negative_event:
             management_blockers.append("NEGATIVE_HIGH_IMPACT_NEWS")
         management_blockers.extend(confluence["allocation_blockers"])
         if event_overlay.get("hard_risk_flags"):
-            management_blockers.append(
-                "MATERIAL_NEWS_RISK_REVIEW_REQUIRED"
-            )
+            management_blockers.append("MATERIAL_NEWS_RISK_REVIEW_REQUIRED")
         if metadata["asset_type"] in {
             "STOCK",
             "ETF",
@@ -1110,21 +919,17 @@ def rank_opportunities(
             "NOT_CONFIGURED",
         }:
             management_blockers.append("SHARIAH_ATTESTATION_REQUIRED")
+        product_identity = real_asset.get("product_identity", {})
+        management_blockers.extend(str(value) for value in product_identity.get("blockers", []))
         research_blockers = list(management_blockers)
         if not research_eligible_source:
-            research_blockers.append(
-                "RESEARCH_OBSERVER_NOT_PORTFOLIO_ELIGIBLE"
-            )
+            research_blockers.append("RESEARCH_OBSERVER_NOT_PORTFOLIO_ELIGIBLE")
         override = dynamic_overrides.get(ticker, {})
         if str(override.get("action")) == "AVOID":
-            raw_override_blockers = [
-                str(item) for item in override.get("risk_blockers", [])
-            ]
-            effective_override_blockers = (
-                _effective_dynamic_override_blockers(
-                    raw_override_blockers,
-                    shariah_status=shariah,
-                )
+            raw_override_blockers = [str(item) for item in override.get("risk_blockers", [])]
+            effective_override_blockers = _effective_dynamic_override_blockers(
+                raw_override_blockers,
+                shariah_status=shariah,
             )
             management_blockers.extend(effective_override_blockers)
             if not raw_override_blockers:
@@ -1135,19 +940,11 @@ def rank_opportunities(
             ]
         deployment_blockers = list(research_blockers)
         if not deployment_eligible_source:
-            deployment_blockers.append(
-                "STRATEGY_DEPLOYMENT_EVIDENCE_REQUIRED"
-            )
+            deployment_blockers.append("STRATEGY_DEPLOYMENT_EVIDENCE_REQUIRED")
         deployment_blockers.append("EXECUTION_AUTHORITY_NONE")
         management = _management_policy(families)
-        stop_risks = [
-            _stop_risk(item)
-            for item in selected
-            if _stop_risk(item) > 0
-        ]
-        stop_risk_pct = (
-            float(np.median(stop_risks)) if stop_risks else 0.1
-        )
+        stop_risks = [_stop_risk(item) for item in selected if _stop_risk(item) > 0]
+        stop_risk_pct = float(np.median(stop_risks)) if stop_risks else 0.1
         stop_risk_pct = min(max(stop_risk_pct, 0.02), 0.2)
         rows.append(
             {
@@ -1155,56 +952,41 @@ def rank_opportunities(
                 **metadata,
                 "opportunity_score": round(score, 6),
                 "gross_score": round(gross_score, 6),
-                "base_score_without_confluence": round(
-                    base_score_without_confluence, 6
-                ),
+                "base_score_without_confluence": round(base_score_without_confluence, 6),
                 "confluence_adjustment": round(
-                    confluence_only_score
-                    - base_score_without_confluence,
+                    confluence_only_score - base_score_without_confluence,
                     6,
                 ),
-                "opportunity_score_before_news": round(
-                    confluence_only_score, 6
-                ),
-                "news_score_adjustment": round(
-                    news_score_adjustment, 6
-                ),
+                "opportunity_score_before_news": round(confluence_only_score, 6),
+                "news_score_adjustment": round(news_score_adjustment, 6),
                 "news_event_context": event_overlay,
                 "multilayer_confluence": confluence,
-                "components": {
-                    key: round(value, 6)
-                    for key, value in components.items()
-                },
-                "penalties": {
-                    key: round(value, 6)
-                    for key, value in penalties.items()
-                },
+                "components": {key: round(value, 6) for key, value in components.items()},
+                "penalties": {key: round(value, 6) for key, value in penalties.items()},
                 "strategy_count": len(selected),
                 "strategy_ids": sorted(latest_by_strategy),
                 "strategy_families": families,
                 "timeframes": timeframes,
                 "opportunity_class": class_name,
-                "normalized_asset_class": normalize_asset_class(
-                    metadata
-                ),
-                "correlation_cluster": economic_cluster(
-                    ticker, metadata
-                ),
+                "normalized_asset_class": normalize_asset_class(metadata),
+                "correlation_cluster": economic_cluster(ticker, metadata),
                 "active_swing_timeframe_context": timeframe_context,
+                "active_swing_contract": swing_contract,
+                "lifecycle_state": swing_contract["lifecycle_state"],
+                "setup_id": swing_contract["setup_id"],
                 "real_asset_context": real_asset,
                 "strategy_allocation": {
                     "status": strategy_weight_status,
                     "raw_signal_quality": round(raw_signal_quality, 6),
-                    "weighted_signal_quality": round(
-                        weighted_signal_quality, 6
-                    ),
+                    "weighted_signal_quality": round(weighted_signal_quality, 6),
                     "participating_weight": round(allocated_weight, 6),
                     "allocation_strength": round(allocation_strength, 6),
                     "weighted_strategy_count": len(allocated),
                 },
                 "reason_count": len(reasons),
                 "reasons": reasons[:12],
-                "market_context": symbol_market_context or {
+                "market_context": symbol_market_context
+                or {
                     "status": "NO_CONTEXT_NEUTRAL_FALLBACK",
                     "ranking_components": {
                         "orderflow_context": 0.5,
@@ -1213,10 +995,7 @@ def rank_opportunities(
                     "standalone_entry_authority": False,
                     "execution_authority": "NONE",
                 },
-                "data_timestamp": max(
-                    str(item.get("data_timestamp", ""))
-                    for item in selected
-                ),
+                "data_timestamp": max(str(item.get("data_timestamp", "")) for item in selected),
                 "contract_resolved": contract_resolved,
                 "con_id": contracts.get(ticker, {}).get("con_id"),
                 "signal_contract_currency_status": (
@@ -1233,36 +1012,19 @@ def rank_opportunities(
                 "research_allocation_eligible": not research_blockers,
                 "deployment_eligible": not deployment_blockers,
                 "evidence_tiers": evidence_tiers,
-                "research_allocation_blockers": sorted(
-                    set(research_blockers)
-                ),
-                "position_management_blockers": sorted(
-                    set(management_blockers)
-                ),
-                "execution_blockers": sorted(
-                    set(research_blockers)
-                ),
-                "deployment_blockers": sorted(
-                    set(deployment_blockers)
-                ),
+                "research_allocation_blockers": sorted(set(research_blockers)),
+                "position_management_blockers": sorted(set(management_blockers)),
+                "execution_blockers": sorted(set(research_blockers)),
+                "deployment_blockers": sorted(set(deployment_blockers)),
                 "preferred_entry": preferred.get("preferred_entry"),
                 "stop_loss": preferred.get("stop_loss"),
                 "take_profit_1": preferred.get("take_profit_1"),
                 "take_profit_2": preferred.get("take_profit_2"),
                 "stop_risk_pct": round(stop_risk_pct, 6),
                 "currency": signal_currency,
-                "entry_method": str(
-                    preferred.get("entry_type")
-                    or "NEXT_BAR_LIMIT_OR_STOP_LIMIT"
-                ),
-                "stop_method": str(
-                    preferred.get("stop_method")
-                    or management["stop_method"]
-                ),
-                "exit_policy": str(
-                    preferred.get("exit_policy")
-                    or management["exit_policy"]
-                ),
+                "entry_method": str(preferred.get("entry_type") or "NEXT_BAR_LIMIT_OR_STOP_LIMIT"),
+                "stop_method": str(preferred.get("stop_method") or management["stop_method"]),
+                "exit_policy": str(preferred.get("exit_policy") or management["exit_policy"]),
                 "expected_holding_period": str(
                     preferred.get("expected_holding_period")
                     or management["expected_holding_period"]
@@ -1298,22 +1060,14 @@ def allocate_research_portfolio(
         )
     )
     minimum_meaningful_target_weight = float(
-        (dynamic_risk or {}).get(
-            "minimum_meaningful_target_weight", 0.0
-        )
+        (dynamic_risk or {}).get("minimum_meaningful_target_weight", 0.0)
     )
     regime = str(technical_regime.get("regime", "UNKNOWN"))
-    market_regime = str(
-        macro.get("regime", {}).get("market_regime", "UNKNOWN")
-    )
+    market_regime = str(macro.get("regime", {}).get("market_regime", "UNKNOWN"))
     target = (
         float(portfolio["research_maximum_exposure"])
         * float(policy["regime_multipliers"].get(regime, 0.4))
-        * float(
-            policy["macro_market_multipliers"].get(
-                market_regime, 0.65
-            )
-        )
+        * float(policy["macro_market_multipliers"].get(market_regime, 0.65))
     )
     position_limit = int(portfolio["maximum_positions"])
     if dynamic_risk is not None:
@@ -1331,12 +1085,10 @@ def allocate_research_portfolio(
         row
         for row in ranked
         if not _research_blockers(row)
-        and float(row["opportunity_score"])
-        >= float(policy["ranking"]["minimum_allocation_score"])
+        and float(row["opportunity_score"]) >= float(policy["ranking"]["minimum_allocation_score"])
         and (
             whole_share_feasible_tickers is None
-            or str(row["ticker"]).upper()
-            in whole_share_feasible_tickers
+            or str(row["ticker"]).upper() in whole_share_feasible_tickers
         )
     ][: position_limit * 3]
     allocations: list[dict[str, Any]] = []
@@ -1351,13 +1103,9 @@ def allocate_research_portfolio(
         if len(allocations) >= position_limit:
             break
         ticker = candidate["ticker"]
-        max_correlation = _max_selected_correlation(
-            ticker, allocations, correlation
-        )
+        max_correlation = _max_selected_correlation(ticker, allocations, correlation)
         correlation_penalty = (
-            max(0.0, max_correlation - 0.5)
-            if math.isfinite(max_correlation)
-            else 0.15
+            max(0.0, max_correlation - 0.5) if math.isfinite(max_correlation) else 0.15
         )
         score = max(
             0.0,
@@ -1367,8 +1115,7 @@ def allocate_research_portfolio(
                     candidate["opportunity_score"],
                 )
             )
-            - correlation_penalty
-            * float(policy["penalties"]["correlation"]),
+            - correlation_penalty * float(policy["penalties"]["correlation"]),
         )
         volatility = _volatility_from_matrix(ticker, correlation)
         risk_score = score / max(volatility, 0.12)
@@ -1395,24 +1142,14 @@ def allocate_research_portfolio(
                 )
             )
             asset_cap = max(asset_cap, dynamic_asset_cap)
-        sleeve_cap = float(
-            policy["sleeve_caps"].get(candidate["sleeve"], target)
-        )
+        sleeve_cap = float(policy["sleeve_caps"].get(candidate["sleeve"], target))
         sector_cap = float(portfolio["maximum_sector_weight"])
         region_cap = float(portfolio["maximum_region_weight"])
-        cluster = str(
-            candidate.get("correlation_cluster") or "UNKNOWN"
-        )
-        cluster_cap = float(
-            portfolio["maximum_correlated_bucket_weight"]
-        )
-        normalized_asset_class = str(
-            candidate.get("normalized_asset_class") or "EQUITY"
-        )
+        cluster = str(candidate.get("correlation_cluster") or "UNKNOWN")
+        cluster_cap = float(portfolio["maximum_correlated_bucket_weight"])
+        normalized_asset_class = str(candidate.get("normalized_asset_class") or "EQUITY")
         asset_class_cap = float(
-            policy.get("asset_class_caps", {}).get(
-                normalized_asset_class, target
-            )
+            policy.get("asset_class_caps", {}).get(normalized_asset_class, target)
         )
         weight = min(
             raw_weight,
@@ -1424,14 +1161,11 @@ def allocate_research_portfolio(
             max(0.0, cluster_cap - cluster_used[cluster]),
             max(
                 0.0,
-                asset_class_cap
-                - asset_class_used[normalized_asset_class],
+                asset_class_cap - asset_class_used[normalized_asset_class],
             ),
         )
         stop_risk = max(float(candidate["stop_risk_pct"]), 0.01)
-        heat_room = max(
-            0.0, maximum_portfolio_heat - heat
-        )
+        heat_room = max(0.0, maximum_portfolio_heat - heat)
         weight = min(weight, heat_room / stop_risk)
         if weight <= 0.001:
             continue
@@ -1440,9 +1174,7 @@ def allocate_research_portfolio(
             "target_weight": round(weight, 8),
             "correlation_penalty": round(correlation_penalty, 6),
             "maximum_correlation_to_selected": (
-                round(max_correlation, 6)
-                if math.isfinite(max_correlation)
-                else None
+                round(max_correlation, 6) if math.isfinite(max_correlation) else None
             ),
         }
         allocations.append(allocation)
@@ -1453,12 +1185,8 @@ def allocate_research_portfolio(
         region_used[candidate["region"]] += weight
         cluster_used[cluster] += weight
         asset_class_used[normalized_asset_class] += weight
-    weights = np.array(
-        [float(row["target_weight"]) for row in allocations], dtype=float
-    )
-    estimated_volatility = _portfolio_volatility(
-        allocations, correlation
-    )
+    weights = np.array([float(row["target_weight"]) for row in allocations], dtype=float)
+    estimated_volatility = _portfolio_volatility(allocations, correlation)
     max_corr = max(
         (
             float(row["maximum_correlation_to_selected"])
@@ -1478,17 +1206,10 @@ def allocate_research_portfolio(
         "cash_weight": round(max(0.0, 1.0 - used), 8),
         "allocations": allocations,
         "portfolio_heat": round(heat, 8),
-        "portfolio_heat_gate": (
-            "GO"
-            if heat <= maximum_portfolio_heat + 1e-12
-            else "BLOCKED"
-        ),
+        "portfolio_heat_gate": ("GO" if heat <= maximum_portfolio_heat + 1e-12 else "BLOCKED"),
         "maximum_portfolio_heat": round(maximum_portfolio_heat, 8),
         "correlation_gate": (
-            "GO"
-            if max_corr
-            <= float(portfolio["correlation_threshold"]) + 1e-12
-            else "DEGRADED"
+            "GO" if max_corr <= float(portfolio["correlation_threshold"]) + 1e-12 else "DEGRADED"
         ),
         "estimated_annualized_volatility": estimated_volatility,
         "maximum_pairwise_correlation": round(max_corr, 6),
@@ -1503,18 +1224,12 @@ def allocate_research_portfolio(
         "position_limit": position_limit,
         "dynamic_risk_applied": dynamic_risk is not None,
         "dynamic_risk_multiplier": (
-            float(dynamic_risk["multipliers"]["combined"])
-            if dynamic_risk is not None
-            else 1.0
+            float(dynamic_risk["multipliers"]["combined"]) if dynamic_risk is not None else 1.0
         ),
         "signal_scarcity_multiplier": (
-            float(dynamic_risk["signal_scarcity_multiplier"])
-            if dynamic_risk is not None
-            else 1.0
+            float(dynamic_risk["signal_scarcity_multiplier"]) if dynamic_risk is not None else 1.0
         ),
-        "whole_share_preselection_applied": (
-            whole_share_feasible_tickers is not None
-        ),
+        "whole_share_preselection_applied": (whole_share_feasible_tickers is not None),
     }
 
 
@@ -1546,11 +1261,7 @@ def _whole_share_candidate_preflight(
             "selection_filter_applied": False,
             "feasible_tickers": [],
         }
-    limit = int(
-        policy.get("candidate_funnel", {}).get(
-            "maximum_portfolio_candidates", 30
-        )
-    )
+    limit = int(policy.get("candidate_funnel", {}).get("maximum_portfolio_candidates", 30))
     candidates = [
         row
         for row in ranked
@@ -1585,22 +1296,18 @@ def _whole_share_candidate_preflight(
             (
                 item
                 for item in sizing.get("positions", [])
-                if str(item.get("ticker", "")).upper()
-                == str(candidate["ticker"]).upper()
+                if str(item.get("ticker", "")).upper() == str(candidate["ticker"]).upper()
             ),
             {},
         )
         status = str(
-            row.get("whole_share_feasibility_status")
-            or "WHOLE_SHARE_PREFLIGHT_DATA_BLOCKED"
+            row.get("whole_share_feasibility_status") or "WHOLE_SHARE_PREFLIGHT_DATA_BLOCKED"
         )
         status_counts[status] += 1
         candidate_results.append(
             {
                 "ticker": str(candidate["ticker"]).upper(),
-                "asset_class": _canary_asset_class(
-                    candidate.get("asset_type")
-                ),
+                "asset_class": _canary_asset_class(candidate.get("asset_type")),
                 "opportunity_score": candidate.get("opportunity_score"),
                 "status": status,
                 "execution_candidate_status": row.get(
@@ -1619,26 +1326,14 @@ def _whole_share_candidate_preflight(
                 "desired_qty": row.get("desired_qty"),
                 "normal_allowed_qty": row.get("normal_allowed_qty"),
                 "level1_canary_qty": row.get("level1_canary_qty"),
-                "actual_notional_eur": row.get(
-                    "canary_actual_notional_eur"
-                ),
-                "actual_portfolio_weight": row.get(
-                    "canary_actual_portfolio_weight"
-                ),
-                "planned_risk_eur": row.get(
-                    "canary_planned_risk_eur"
-                ),
-                "canary_risk_budget_eur": row.get(
-                    "canary_risk_budget_eur"
-                ),
-                "canary_risk_utilization": row.get(
-                    "canary_risk_utilization"
-                ),
+                "actual_notional_eur": row.get("canary_actual_notional_eur"),
+                "actual_portfolio_weight": row.get("canary_actual_portfolio_weight"),
+                "planned_risk_eur": row.get("canary_planned_risk_eur"),
+                "canary_risk_budget_eur": row.get("canary_risk_budget_eur"),
+                "canary_risk_utilization": row.get("canary_risk_utilization"),
                 "cash_after_eur": row.get("canary_cash_after_eur"),
                 "canary_sizing_reason": row.get("canary_sizing_reason"),
-                "canary_blocking_reason": row.get(
-                    "canary_blocking_reason"
-                ),
+                "canary_blocking_reason": row.get("canary_blocking_reason"),
             }
         )
         if status == "WHOLE_SHARE_FEASIBLE_RISK_FIRST":
@@ -1653,9 +1348,7 @@ def _whole_share_candidate_preflight(
         "selection_filter_applied": bool(feasible),
         "fallback_when_none_feasible": "RETAIN_TOP_RESEARCH_TARGET",
         "feasible_tickers": feasible,
-        "candidate_results": sorted(
-            candidate_results, key=lambda item: item["ticker"]
-        ),
+        "candidate_results": sorted(candidate_results, key=lambda item: item["ticker"]),
         "execution_authority": "NONE",
     }
 
@@ -1671,16 +1364,9 @@ def position_actions(
     management_states: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     ranking = {row["ticker"]: row for row in ranked}
-    targets = {
-        row["ticker"]: row
-        for row in allocation.get("allocations", [])
-    }
+    targets = {row["ticker"]: row for row in allocation.get("allocations", [])}
     best_replacement = next(
-        (
-            row
-            for row in allocation.get("allocations", [])
-            if not _research_blockers(row)
-        ),
+        (row for row in allocation.get("allocations", []) if not _research_blockers(row)),
         None,
     )
     result = []
@@ -1690,27 +1376,20 @@ def position_actions(
         candidate = ranking.get(ticker)
         reasons: list[str] = []
         action = "HOLD"
-        score = (
-            float(candidate["opportunity_score"]) if candidate else 0.0
-        )
+        score = float(candidate["opportunity_score"]) if candidate else 0.0
         override = dynamic_overrides.get(ticker, {})
         management = management_states.get(ticker, {})
         if str(override.get("action")) == "AVOID":
             action = "EXIT"
             reasons.append("DYNAMIC_CONSENSUS_AVOID")
-            reasons.extend(
-                str(item)
-                for item in override.get("risk_blockers", [])
-            )
+            reasons.extend(str(item) for item in override.get("risk_blockers", []))
         elif candidate is None:
             action = "REDUCE"
             reasons.append("NO_CURRENT_RANKED_OPPORTUNITY")
         elif _position_blockers(candidate):
             action = "EXIT"
             reasons.extend(_position_blockers(candidate))
-        elif management.get("status") == "GO" and management.get(
-            "action"
-        ) in {
+        elif management.get("status") == "GO" and management.get("action") in {
             "EXIT",
             "REDUCE_50",
             "TAKE_PARTIAL_25",
@@ -1722,10 +1401,7 @@ def position_actions(
                 "TAKE_PARTIAL_25": "TAKE_PARTIAL_PROFIT",
                 "TAKE_PARTIAL_50": "TAKE_PARTIAL_PROFIT",
             }.get(str(management["action"]), str(management["action"]))
-            reasons.extend(
-                str(reason)
-                for reason in management.get("reason_codes", [])
-            )
+            reasons.extend(str(reason) for reason in management.get("reason_codes", []))
         elif score <= float(policy["ranking"]["exit_score"]):
             action = "EXIT"
             reasons.append("OPPORTUNITY_SCORE_BELOW_EXIT_THRESHOLD")
@@ -1738,16 +1414,13 @@ def position_actions(
         elif (
             best_replacement
             and best_replacement["ticker"] != ticker
-            and float(best_replacement["opportunity_score"])
-            - score
+            and float(best_replacement["opportunity_score"]) - score
             >= float(policy["ranking"]["replacement_improvement"])
             + float(policy["ranking"]["switching_cost_score"])
         ):
             action = "REPLACE"
             reasons.append("SUPERIOR_RISK_ADJUSTED_REPLACEMENT")
-        elif ticker in targets and score >= float(
-            policy["ranking"]["minimum_add_score"]
-        ):
+        elif ticker in targets and score >= float(policy["ranking"]["minimum_add_score"]):
             action = "ADD"
             reasons.append("HIGH_SCORE_AND_TARGET_ALLOCATION")
         else:
@@ -1770,9 +1443,7 @@ def position_actions(
                 "reason_codes": sorted(set(reasons)),
                 "opportunity_score": round(score, 6),
                 "replacement_ticker": (
-                    best_replacement["ticker"]
-                    if action == "REPLACE" and best_replacement
-                    else None
+                    best_replacement["ticker"] if action == "REPLACE" and best_replacement else None
                 ),
                 "current_quantity": position["quantity"],
                 "average_cost": position["average_cost"],
@@ -1780,9 +1451,7 @@ def position_actions(
                 "risk_increasing": action in RISK_INCREASING_ACTIONS,
                 "automatic_execution_allowed": False,
                 "execution_authority": "NONE",
-                "position_management_status": management.get(
-                    "status", "UNAVAILABLE"
-                ),
+                "position_management_status": management.get("status", "UNAVAILABLE"),
             }
         )
     return result
@@ -1821,9 +1490,7 @@ def build_capital_decisions(
         source_action = str(row.get("advisory_action") or "HOLD")
         formal_action = action_map.get(source_action, "HOLD")
         replacement = row.get("replacement_ticker")
-        replacement_score = float(
-            ranking.get(str(replacement), {}).get("opportunity_score", 0.0)
-        )
+        replacement_score = float(ranking.get(str(replacement), {}).get("opportunity_score", 0.0))
         current_score = float(row.get("opportunity_score") or 0.0)
         marginal_value = (
             replacement_score - current_score - switching_cost
@@ -1868,19 +1535,14 @@ def build_capital_decisions(
                 "formal_action": "OPEN",
                 "source_action": "TARGET_ALLOCATION_CANDIDATE",
                 "replacement_ticker": None,
-                "research_target_weight": float(
-                    target.get("target_weight") or 0.0
-                ),
+                "research_target_weight": float(target.get("target_weight") or 0.0),
                 "approved_target_weight": 0.0,
                 "rank_utility_margin": round(
-                    float(candidate.get("opportunity_score") or 0.0)
-                    - minimum_score,
+                    float(candidate.get("opportunity_score") or 0.0) - minimum_score,
                     8,
                 ),
                 "whole_share_feasibility_status": feasibility,
-                "minimum_feasible_weight": sizing.get(
-                    "minimum_feasible_weight"
-                ),
+                "minimum_feasible_weight": sizing.get("minimum_feasible_weight"),
                 "sizing_basis": sizing.get("sizing_basis"),
                 "reason_codes": (
                     ["RESEARCH_TARGET_SELECTED"]
@@ -1893,8 +1555,7 @@ def build_capital_decisions(
             }
         )
     executable_open_count = sum(
-        row["formal_action"] == "OPEN"
-        and row["implementation_status"] == "EXECUTION_READY"
+        row["formal_action"] == "OPEN" and row["implementation_status"] == "EXECUTION_READY"
         for row in decisions
     )
     cash_weight = float(allocation.get("cash_weight") or 0.0)
@@ -1964,10 +1625,7 @@ def build_private_sizing(
     if equity <= 0 or available < 0:
         return _blocked_private_sizing("INVALID_PRIVATE_ACCOUNT_VALUES")
     ranked_map = {row["ticker"]: row for row in ranked}
-    current_map = {
-        row["symbol"]: _decimal(row["quantity"])
-        for row in current_positions
-    }
+    current_map = {row["symbol"]: _decimal(row["quantity"]) for row in current_positions}
     capacity = _capacity_map(project_root)
     fx = _fx_map(project_root)
     shared_cost_model = load_shared_cost_model(project_root)
@@ -1979,9 +1637,7 @@ def build_private_sizing(
         else policy["portfolio"]["shadow_base_risk_per_trade"]
     )
     risk_multiplier = _decimal(
-        dynamic_risk["multipliers"]["combined"]
-        if dynamic_risk is not None
-        else 1
+        dynamic_risk["multipliers"]["combined"] if dynamic_risk is not None else 1
     )
     small_policy = policy.get("small_account_whole_share", {})
     small_account_mode = bool(small_policy.get("enabled", False)) and (
@@ -2038,32 +1694,19 @@ def build_private_sizing(
         cash_quantity = Decimal("0")
         aggregate_exposure_quantity = Decimal("0")
         aggregate_heat_quantity = Decimal("0")
-        desired_notional = (
-            equity * _decimal(target.get("target_weight", 0))
-        )
+        desired_notional = equity * _decimal(target.get("target_weight", 0))
         take_profit = _decimal(target.get("take_profit_1"))
         take_profit_source = "SIGNAL_TAKE_PROFIT"
         if take_profit <= price and stop > 0 and stop < price:
             take_profit = price + (price - stop) * _decimal(
-                small_policy.get(
-                    "protective_take_profit_reward_to_risk", 2.0
-                )
+                small_policy.get("protective_take_profit_reward_to_risk", 2.0)
             )
             take_profit_source = "PROTECTIVE_REWARD_TO_RISK_FALLBACK"
         estimated_entry_cost = Decimal("0")
         economic_cost_incoherent = False
         per_share_risk = Decimal("0")
-        unit_eur = (
-            price * fx_rate
-            if fx_rate is not None and price > 0
-            else Decimal("0")
-        )
-        if (
-            not blockers
-            and unit_eur > 0
-            and fx_rate is not None
-            and capacity_eur is not None
-        ):
+        unit_eur = price * fx_rate if fx_rate is not None and price > 0 else Decimal("0")
+        if not blockers and unit_eur > 0 and fx_rate is not None and capacity_eur is not None:
             minimum_feasible_weight = unit_eur / equity
             desired_quantity = _whole_units(desired_notional / unit_eur)
             if (
@@ -2094,18 +1737,13 @@ def build_private_sizing(
                     )
                 )
                 dynamic_cap = _decimal(
-                    (dynamic_risk or {}).get(
-                        "maximum_position_weight", small_cap
-                    )
+                    (dynamic_risk or {}).get("maximum_position_weight", small_cap)
                 )
                 effective_position_cap = min(small_cap, dynamic_cap)
             else:
                 effective_position_cap = policy_position_cap
             risk_budget = (
-                equity
-                * base_risk
-                * risk_multiplier
-                * _decimal(target["opportunity_score"])
+                equity * base_risk * risk_multiplier * _decimal(target["opportunity_score"])
             )
             one_share_costs = estimate_transaction_cost(
                 unit_eur,
@@ -2123,27 +1761,13 @@ def build_private_sizing(
                     "fx_conversion_eur",
                 )
             )
-            per_share_risk = (
-                abs(price - stop) * fx_rate + adverse_cost_per_share
-            )
-            risk_quantity = _whole_units(
-                risk_budget / per_share_risk
-            )
-            position_cap_quantity = _whole_units(
-                equity * effective_position_cap / unit_eur
-            )
-            capacity_quantity = _whole_units(
-                capacity_eur / unit_eur
-            )
-            cash_quantity = _whole_units(
-                cash_remaining / unit_eur
-            )
-            aggregate_exposure_quantity = _whole_units(
-                aggregate_notional_room / unit_eur
-            )
-            aggregate_heat_quantity = _whole_units(
-                aggregate_heat_room / per_share_risk
-            )
+            per_share_risk = abs(price - stop) * fx_rate + adverse_cost_per_share
+            risk_quantity = _whole_units(risk_budget / per_share_risk)
+            position_cap_quantity = _whole_units(equity * effective_position_cap / unit_eur)
+            capacity_quantity = _whole_units(capacity_eur / unit_eur)
+            cash_quantity = _whole_units(cash_remaining / unit_eur)
+            aggregate_exposure_quantity = _whole_units(aggregate_notional_room / unit_eur)
+            aggregate_heat_quantity = _whole_units(aggregate_heat_room / per_share_risk)
             target_quantity = min(
                 desired_quantity,
                 risk_quantity,
@@ -2171,60 +1795,37 @@ def build_private_sizing(
                     * _decimal(cost_policy.get("estimated_slippage_bps", 0))
                     / Decimal("10000")
                 )
-                estimated_entry_cost = max(
-                    shared_entry_cost, conservative_stress_cost
-                )
+                estimated_entry_cost = max(shared_entry_cost, conservative_stress_cost)
                 actual_initial_risk = target_quantity * per_share_risk
                 minimum_notional = max(
                     shared_cost_model.minimum_practical_trade_eur,
-                    _decimal(
-                        cost_policy.get("minimum_economic_notional_eur", 0)
-                    ),
+                    _decimal(cost_policy.get("minimum_economic_notional_eur", 0)),
                 )
                 maximum_cost_ratio = _decimal(
-                    cost_policy.get(
-                        "maximum_cost_to_initial_risk_ratio", "Infinity"
-                    )
+                    cost_policy.get("maximum_cost_to_initial_risk_ratio", "Infinity")
                 )
                 if target_quantity * unit_eur < minimum_notional or (
                     actual_initial_risk <= 0
-                    or estimated_entry_cost
-                    > actual_initial_risk * maximum_cost_ratio
+                    or estimated_entry_cost > actual_initial_risk * maximum_cost_ratio
                 ):
                     target_quantity = Decimal("0")
                     economic_cost_incoherent = True
             if economic_cost_incoherent:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_ECONOMIC_COST_INCOHERENT"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_ECONOMIC_COST_INCOHERENT"
             elif target_quantity >= 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
             elif risk_quantity < 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_RISK_BUDGET_INSUFFICIENT"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_RISK_BUDGET_INSUFFICIENT"
             elif position_cap_quantity < 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_NOTIONAL_CAP_EXCEEDED"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_NOTIONAL_CAP_EXCEEDED"
             elif capacity_quantity < 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_LIQUIDITY_CAP_INSUFFICIENT"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_LIQUIDITY_CAP_INSUFFICIENT"
             elif cash_quantity < 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_CASH_INSUFFICIENT"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_CASH_INSUFFICIENT"
             elif aggregate_exposure_quantity < 1:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_PORTFOLIO_EXPOSURE_CAP_EXCEEDED"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_PORTFOLIO_EXPOSURE_CAP_EXCEEDED"
             else:
-                whole_share_feasibility_status = (
-                    "WHOLE_SHARE_PORTFOLIO_HEAT_CAP_EXCEEDED"
-                )
+                whole_share_feasibility_status = "WHOLE_SHARE_PORTFOLIO_HEAT_CAP_EXCEEDED"
             asset_class = _canary_asset_class(target.get("asset_type"))
             canary = evaluate_whole_share_canary(
                 project_root,
@@ -2242,39 +1843,27 @@ def build_private_sizing(
                 normal_maximum_position_weight=effective_position_cap,
                 normal_maximum_portfolio_heat_pct=maximum_portfolio_heat,
                 liquidity_notional_eur=capacity_eur,
-                existing_position_notional_eur=(
-                    current_quantity * unit_eur
-                ),
+                existing_position_notional_eur=(current_quantity * unit_eur),
                 existing_total_exposure_eur=max(
                     Decimal("0"),
-                    equity * maximum_discrete_exposure
-                    - aggregate_notional_room,
+                    equity * maximum_discrete_exposure - aggregate_notional_room,
                 ),
                 existing_portfolio_risk_eur=max(
                     Decimal("0"),
-                    equity * maximum_portfolio_heat
-                    - aggregate_heat_room,
+                    equity * maximum_portfolio_heat - aggregate_heat_room,
                 ),
             )
             level1_canary_quantity = _decimal(canary.get("canary_qty"))
-            canary_sizing_reason = str(
-                canary.get("sizing_reason") or "CANARY_SIZING_BLOCKED"
-            )
+            canary_sizing_reason = str(canary.get("sizing_reason") or "CANARY_SIZING_BLOCKED")
             canary_blocking_reason = canary.get("blocking_reason")
             if target_quantity < 1:
                 level1_canary_quantity = Decimal("0")
                 canary_sizing_reason = whole_share_feasibility_status
                 canary_blocking_reason = whole_share_feasibility_status
             else:
-                level1_canary_quantity = min(
-                    level1_canary_quantity, target_quantity
-                )
-            canary_risk_budget = _decimal(
-                canary.get("canary_risk_budget_eur")
-            )
-            canary_risk_utilization = _decimal(
-                canary.get("canary_risk_utilization")
-            )
+                level1_canary_quantity = min(level1_canary_quantity, target_quantity)
+            canary_risk_budget = _decimal(canary.get("canary_risk_budget_eur"))
+            canary_risk_utilization = _decimal(canary.get("canary_risk_utilization"))
             if level1_canary_quantity < 1:
                 canary_risk_utilization = Decimal("0")
             canary_actual_notional = level1_canary_quantity * unit_eur
@@ -2284,21 +1873,15 @@ def build_private_sizing(
                 Decimal("0"),
                 cash_remaining - canary_actual_notional,
             )
-            additional = max(
-                Decimal("0"), target_quantity - current_quantity
-            )
+            additional = max(Decimal("0"), target_quantity - current_quantity)
             cash_remaining -= additional * unit_eur
             aggregate_notional_room -= additional * unit_eur
             aggregate_heat_room -= additional * per_share_risk
         sizing_rows.append(
             {
                 "ticker": ticker,
-                "opportunity_score": str(
-                    target["opportunity_score"]
-                ),
-                "research_target_weight": str(
-                    target["target_weight"]
-                ),
+                "opportunity_score": str(target["opportunity_score"]),
+                "research_target_weight": str(target["target_weight"]),
                 "currency": currency,
                 "fx_to_eur": str(fx_rate) if fx_rate else None,
                 "reference_price": str(price),
@@ -2308,64 +1891,41 @@ def build_private_sizing(
                 "current_quantity": str(current_quantity),
                 "unconstrained_target_quantity": str(target_quantity),
                 "target_quantity": str(target_quantity),
-                "planned_quantity_delta": str(
-                    target_quantity - current_quantity
-                ),
+                "planned_quantity_delta": str(target_quantity - current_quantity),
                 "unit_notional_eur": str(unit_eur),
-                "target_notional_eur": str(
-                    target_quantity * unit_eur
-                ),
+                "target_notional_eur": str(target_quantity * unit_eur),
                 "desired_notional_eur": str(desired_notional),
                 "desired_qty": str(desired_quantity),
                 "normal_allowed_qty": str(target_quantity),
                 "level1_canary_qty": str(level1_canary_quantity),
-                "canary_actual_notional_eur": str(
-                    canary_actual_notional
-                ),
-                "canary_actual_portfolio_weight": str(
-                    canary_actual_weight
-                ),
+                "canary_actual_notional_eur": str(canary_actual_notional),
+                "canary_actual_portfolio_weight": str(canary_actual_weight),
                 "canary_planned_risk_eur": str(canary_planned_risk),
                 "canary_cash_after_eur": str(canary_cash_after),
                 "risk_based_quantity": str(risk_quantity),
                 "cash_based_quantity": str(cash_quantity),
                 "whole_share_quantity": str(target_quantity),
                 "actual_notional_eur": str(target_quantity * unit_eur),
-                "actual_portfolio_weight": str(
-                    target_quantity * unit_eur / equity
-                ),
-                "actual_risk_eur": str(
-                    target_quantity * per_share_risk
-                ),
+                "actual_portfolio_weight": str(target_quantity * unit_eur / equity),
+                "actual_risk_eur": str(target_quantity * per_share_risk),
                 "remaining_cash_eur": str(cash_remaining),
                 "estimated_entry_cost_eur": str(estimated_entry_cost),
                 "transaction_cost_model": (
-                    "SHARED_TRANSACTION_COST_MODEL_V1_WITH_"
-                    "CONSERVATIVE_STRESS_FLOOR"
+                    "SHARED_TRANSACTION_COST_MODEL_V1_WITH_CONSERVATIVE_STRESS_FLOOR"
                 ),
-                "planned_notional_eur": str(
-                    abs(target_quantity - current_quantity) * unit_eur
-                ),
-                "risk_per_share_eur": str(
-                    per_share_risk
-                ),
+                "planned_notional_eur": str(abs(target_quantity - current_quantity) * unit_eur),
+                "risk_per_share_eur": str(per_share_risk),
                 "risk_budget_eur": str(risk_budget),
                 "canary_risk_budget_eur": str(canary_risk_budget),
                 "canary_risk_utilization": str(canary_risk_utilization),
                 "canary_sizing_reason": canary_sizing_reason,
                 "canary_blocking_reason": canary_blocking_reason,
-                "capital_level_1_semantics": (
-                    "WHOLE_SHARE_EXECUTION_CANARY"
-                ),
+                "capital_level_1_semantics": ("WHOLE_SHARE_EXECUTION_CANARY"),
                 "minimum_feasible_weight": (
-                    str(minimum_feasible_weight)
-                    if minimum_feasible_weight is not None
-                    else None
+                    str(minimum_feasible_weight) if minimum_feasible_weight is not None else None
                 ),
                 "effective_position_cap": str(effective_position_cap),
-                "whole_share_feasibility_status": (
-                    whole_share_feasibility_status
-                ),
+                "whole_share_feasibility_status": (whole_share_feasibility_status),
                 "execution_candidate_status": (
                     "EXECUTABLE_WHOLE_SHARE"
                     if target_quantity >= 1
@@ -2378,10 +1938,7 @@ def build_private_sizing(
                 "capacity_quantity": str(capacity_quantity),
                 "cash_quantity": str(cash_quantity),
                 "execution_blockers": blockers,
-                "whole_share": (
-                    target_quantity
-                    == target_quantity.to_integral_value()
-                ),
+                "whole_share": (target_quantity == target_quantity.to_integral_value()),
             }
         )
     target_symbols = {row["ticker"] for row in sizing_rows}
@@ -2399,24 +1956,16 @@ def build_private_sizing(
             blockers.append("FX_RATE_UNAVAILABLE")
         if price <= 0:
             blockers.append("CURRENT_PRICE_UNAVAILABLE")
-        unit_eur = (
-            price * fx_rate
-            if fx_rate is not None and price > 0
-            else Decimal("0")
-        )
+        unit_eur = price * fx_rate if fx_rate is not None and price > 0 else Decimal("0")
         sizing_rows.append(
             {
                 "ticker": ticker,
-                "opportunity_score": str(
-                    candidate.get("opportunity_score", "0")
-                ),
+                "opportunity_score": str(candidate.get("opportunity_score", "0")),
                 "research_target_weight": "0",
                 "currency": currency,
                 "fx_to_eur": str(fx_rate) if fx_rate else None,
                 "reference_price": str(price),
-                "stop_price": str(
-                    _decimal(candidate.get("stop_loss"))
-                ),
+                "stop_price": str(_decimal(candidate.get("stop_loss"))),
                 "current_quantity": str(quantity),
                 "unconstrained_target_quantity": "0",
                 "target_quantity": "0",
@@ -2426,9 +1975,7 @@ def build_private_sizing(
                 "planned_notional_eur": str(quantity * unit_eur),
                 "risk_per_share_eur": "0",
                 "execution_blockers": blockers,
-                "whole_share": (
-                    quantity == quantity.to_integral_value()
-                ),
+                "whole_share": (quantity == quantity.to_integral_value()),
             }
         )
     _apply_turnover_gate(sizing_rows, equity, policy)
@@ -2436,8 +1983,7 @@ def build_private_sizing(
         (
             max(
                 Decimal("0"),
-                _decimal(row["target_quantity"])
-                - _decimal(row["current_quantity"]),
+                _decimal(row["target_quantity"]) - _decimal(row["current_quantity"]),
             )
             * _decimal(row["unit_notional_eur"])
             for row in sizing_rows
@@ -2446,24 +1992,21 @@ def build_private_sizing(
     )
     current_notional = sum(
         (
-            _decimal(row["current_quantity"])
-            * _decimal(row["unit_notional_eur"])
+            _decimal(row["current_quantity"]) * _decimal(row["unit_notional_eur"])
             for row in sizing_rows
         ),
         Decimal("0"),
     )
     target_notional = sum(
         (
-            _decimal(row["target_quantity"])
-            * _decimal(row["unit_notional_eur"])
+            _decimal(row["target_quantity"]) * _decimal(row["unit_notional_eur"])
             for row in sizing_rows
         ),
         Decimal("0"),
     )
     turnover = sum(
         (
-            abs(_decimal(row["planned_quantity_delta"]))
-            * _decimal(row["unit_notional_eur"])
+            abs(_decimal(row["planned_quantity_delta"])) * _decimal(row["unit_notional_eur"])
             for row in sizing_rows
         ),
         Decimal("0"),
@@ -2473,11 +2016,7 @@ def build_private_sizing(
             _decimal(row["current_quantity"])
             * _decimal(row["unit_notional_eur"])
             / equity
-            * _decimal(
-                ranked_map.get(row["ticker"], {}).get(
-                    "stop_risk_pct", 0
-                )
-            )
+            * _decimal(ranked_map.get(row["ticker"], {}).get("stop_risk_pct", 0))
             for row in sizing_rows
         ),
         Decimal("0"),
@@ -2487,36 +2026,20 @@ def build_private_sizing(
             _decimal(row["target_quantity"])
             * _decimal(row["unit_notional_eur"])
             / equity
-            * _decimal(
-                ranked_map.get(row["ticker"], {}).get(
-                    "stop_risk_pct", 0
-                )
-            )
+            * _decimal(ranked_map.get(row["ticker"], {}).get("stop_risk_pct", 0))
             for row in sizing_rows
         ),
         Decimal("0"),
     )
-    whole_share_violations = sum(
-        not bool(row["whole_share"]) for row in sizing_rows
-    )
+    whole_share_violations = sum(not bool(row["whole_share"]) for row in sizing_rows)
     negative_cash = int(cash_remaining < 0)
-    blockers = sorted(
-        {
-            blocker
-            for row in sizing_rows
-            for blocker in row["execution_blockers"]
-        }
-    )
+    blockers = sorted({blocker for row in sizing_rows for blocker in row["execution_blockers"]})
     hard_blockers = [
-        blocker
-        for blocker in blockers
-        if blocker != "RISK_INCREASING_TURNOVER_CAPPED"
+        blocker for blocker in blockers if blocker != "RISK_INCREASING_TURNOVER_CAPPED"
     ]
     status = (
         "GO"
-        if not hard_blockers
-        and whole_share_violations == 0
-        and negative_cash == 0
+        if not hard_blockers and whole_share_violations == 0 and negative_cash == 0
         else "DATA_BLOCKED"
     )
     if status == "GO" and blockers:
@@ -2528,34 +2051,19 @@ def build_private_sizing(
         "account_equity_eur": str(equity),
         "available_funds_eur": str(available),
         "cash_remaining_eur": str(cash_remaining),
-        "current_gross_exposure_pct": _ratio(
-            current_notional, equity
-        ),
-        "target_gross_exposure_pct": _ratio(
-            target_notional, equity
-        ),
+        "current_gross_exposure_pct": _ratio(current_notional, equity),
+        "target_gross_exposure_pct": _ratio(target_notional, equity),
         "turnover_pct": _ratio(turnover, equity),
-        "current_portfolio_heat": _ratio(
-            current_heat, Decimal("1")
-        ),
-        "target_portfolio_heat": _ratio(
-            target_heat, Decimal("1")
-        ),
-        "target_position_count": sum(
-            _decimal(row["target_quantity"]) > 0
-            for row in sizing_rows
-        ),
+        "current_portfolio_heat": _ratio(current_heat, Decimal("1")),
+        "target_portfolio_heat": _ratio(target_heat, Decimal("1")),
+        "target_position_count": sum(_decimal(row["target_quantity"]) > 0 for row in sizing_rows),
         "whole_share_feasible_candidate_count": sum(
-            row.get("whole_share_feasibility_status")
-            == "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
+            row.get("whole_share_feasibility_status") == "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
             for row in sizing_rows
         ),
         "whole_share_infeasible_candidate_count": sum(
-            str(row.get("whole_share_feasibility_status", "")).startswith(
-                "WHOLE_SHARE_"
-            )
-            and row.get("whole_share_feasibility_status")
-            != "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
+            str(row.get("whole_share_feasibility_status", "")).startswith("WHOLE_SHARE_")
+            and row.get("whole_share_feasibility_status") != "WHOLE_SHARE_FEASIBLE_RISK_FIRST"
             for row in sizing_rows
         ),
         "netted_security_count": len(sizing_rows),
@@ -2563,17 +2071,12 @@ def build_private_sizing(
         "negative_cash_violation_count": negative_cash,
         "security_netting_status": (
             "GO"
-            if len({row["ticker"] for row in sizing_rows})
-            == len(sizing_rows)
+            if len({row["ticker"] for row in sizing_rows}) == len(sizing_rows)
             else "DUPLICATE_SECURITY_BLOCKED"
         ),
-        "turnover_gate": _turnover_gate_status(
-            sizing_rows, equity, policy
-        ),
+        "turnover_gate": _turnover_gate_status(sizing_rows, equity, policy),
         "blockers": blockers,
-        "positions": sorted(
-            sizing_rows, key=lambda row: row["ticker"]
-        ),
+        "positions": sorted(sizing_rows, key=lambda row: row["ticker"]),
         "approved_target_quantities": 0,
         "dynamic_risk_applied": dynamic_risk is not None,
         "dynamic_risk_multiplier": float(risk_multiplier),
@@ -2597,9 +2100,7 @@ def _apply_portfolio_risk_overlay(
             {
                 **row,
                 "advisory_action": (
-                    "BLOCK_NEW_ENTRY"
-                    if row["risk_increasing"]
-                    else row["advisory_action"]
+                    "BLOCK_NEW_ENTRY" if row["risk_increasing"] else row["advisory_action"]
                 ),
                 "reason_codes": sorted(
                     {
@@ -2617,17 +2118,9 @@ def _apply_portfolio_risk_overlay(
             policy["portfolio"]["maximum_portfolio_heat"],
         )
     )
-    maximum_exposure = float(
-        policy["portfolio"]["research_maximum_exposure"]
-    )
-    heat_breach = (
-        float(private_sizing["current_portfolio_heat"])
-        > maximum_heat
-    )
-    exposure_breach = (
-        float(private_sizing["current_gross_exposure_pct"])
-        > maximum_exposure
-    )
+    maximum_exposure = float(policy["portfolio"]["research_maximum_exposure"])
+    heat_breach = float(private_sizing["current_portfolio_heat"]) > maximum_heat
+    exposure_breach = float(private_sizing["current_gross_exposure_pct"]) > maximum_exposure
     if not heat_breach and not exposure_breach:
         return actions
     result = []
@@ -2658,12 +2151,7 @@ def _apply_turnover_gate(
     equity: Decimal,
     policy: dict[str, Any],
 ) -> None:
-    buy_budget = (
-        equity
-        * _decimal(
-            policy["portfolio"]["maximum_turnover_per_rebalance"]
-        )
-    )
+    buy_budget = equity * _decimal(policy["portfolio"]["maximum_turnover_per_rebalance"])
     for row in sorted(
         rows,
         key=lambda item: (
@@ -2678,9 +2166,7 @@ def _apply_turnover_gate(
         affordable = _whole_units(buy_budget / unit)
         allowed_delta = min(delta, affordable)
         if allowed_delta < delta:
-            row["execution_blockers"].append(
-                "RISK_INCREASING_TURNOVER_CAPPED"
-            )
+            row["execution_blockers"].append("RISK_INCREASING_TURNOVER_CAPPED")
         current = _decimal(row["current_quantity"])
         target = current + allowed_delta
         row["target_quantity"] = str(target)
@@ -2700,21 +2186,10 @@ def _turnover_gate_status(
         * _decimal(row["unit_notional_eur"])
         for row in rows
     )
-    cap = (
-        equity
-        * _decimal(
-            policy["portfolio"]["maximum_turnover_per_rebalance"]
-        )
-    )
-    reducing = any(
-        _decimal(row["planned_quantity_delta"]) < 0 for row in rows
-    )
+    cap = equity * _decimal(policy["portfolio"]["maximum_turnover_per_rebalance"])
+    reducing = any(_decimal(row["planned_quantity_delta"]) < 0 for row in rows)
     if increasing <= cap:
-        return (
-            "GO_WITH_RISK_REDUCING_EXIT"
-            if reducing
-            else "GO"
-        )
+        return "GO_WITH_RISK_REDUCING_EXIT" if reducing else "GO"
     return "RISK_INCREASING_TURNOVER_BLOCKED"
 
 
@@ -2722,17 +2197,14 @@ def _private_account_state(project_root: Path) -> dict[str, Any]:
     snapshot = _latest_portfolio_broker_snapshot(project_root)
     account_authority = (
         "RECONCILED_READ_ONLY"
-        if snapshot
-        and snapshot.get("observation_environment") == "LIVE_READ_ONLY"
+        if snapshot and snapshot.get("observation_environment") == "LIVE_READ_ONLY"
         else "RESEARCH_ONLY_PHASE8_OBSERVATION"
     )
     if not _snapshot_has_required_eur_account_values(snapshot):
         snapshot = _latest_complete_research_account_snapshot(project_root)
         account_authority = "RESEARCH_ONLY_LAST_OBSERVED"
     if not snapshot:
-        return _blocked_private_account(
-            "PRIVATE_BROKER_SNAPSHOT_UNAVAILABLE"
-        )
+        return _blocked_private_account("PRIVATE_BROKER_SNAPSHOT_UNAVAILABLE")
     values: dict[str, Decimal] = {}
     for row in snapshot.get("account", {}).get("values", []):
         if str(row.get("currency", "")).upper() != "EUR":
@@ -2748,13 +2220,9 @@ def _private_account_state(project_root: Path) -> dict[str, Any]:
             try:
                 observed_value = Decimal(str(row.get("value")))
             except (ArithmeticError, ValueError):
-                return _blocked_private_account(
-                    "INVALID_EUR_ACCOUNT_VALUE"
-                )
+                return _blocked_private_account("INVALID_EUR_ACCOUNT_VALUE")
             if not observed_value.is_finite():
-                return _blocked_private_account(
-                    "INVALID_EUR_ACCOUNT_VALUE"
-                )
+                return _blocked_private_account("INVALID_EUR_ACCOUNT_VALUE")
             values[tag] = observed_value
     required = {
         "NetLiquidation",
@@ -2762,13 +2230,9 @@ def _private_account_state(project_root: Path) -> dict[str, Any]:
         "TotalCashValue",
     }
     if not required.issubset(values):
-        return _blocked_private_account(
-            "REQUIRED_EUR_ACCOUNT_TAGS_UNAVAILABLE"
-        )
+        return _blocked_private_account("REQUIRED_EUR_ACCOUNT_TAGS_UNAVAILABLE")
     if values["NetLiquidation"] <= 0:
-        return _blocked_private_account(
-            "POSITIVE_NET_LIQUIDATION_REQUIRED"
-        )
+        return _blocked_private_account("POSITIVE_NET_LIQUIDATION_REQUIRED")
     if any(
         values.get(tag, Decimal("0")) < 0
         for tag in (
@@ -2778,9 +2242,7 @@ def _private_account_state(project_root: Path) -> dict[str, Any]:
             "GrossPositionValue",
         )
     ):
-        return _blocked_private_account(
-            "NONNEGATIVE_EUR_ACCOUNT_VALUES_REQUIRED"
-        )
+        return _blocked_private_account("NONNEGATIVE_EUR_ACCOUNT_VALUES_REQUIRED")
     economic = derive_economic_account_state(
         snapshot,
         expected_base_currency="EUR",
@@ -2788,54 +2250,34 @@ def _private_account_state(project_root: Path) -> dict[str, Any]:
         fx_to_eur=_fx_map(project_root),
     )
     research_capacity = economic.get("research_sizing_capacity_eur")
-    if economic.get("research_status") != "RESEARCH_READY" or (
-        research_capacity is None
-    ):
-        return _blocked_private_account(
-            "ECONOMIC_ACCOUNT_RESEARCH_MODEL_NOT_READY"
-        )
+    if economic.get("research_status") != "RESEARCH_READY" or (research_capacity is None):
+        return _blocked_private_account("ECONOMIC_ACCOUNT_RESEARCH_MODEL_NOT_READY")
     return {
         "schema": "private_portfolio_account_state_v1",
         "status": "GO",
         "snapshot_hash": str(snapshot.get("content_hash") or ""),
-        "snapshot_completed_at": snapshot.get(
-            "snapshot_completed_at"
-        ),
+        "snapshot_completed_at": snapshot.get("snapshot_completed_at"),
         "net_liquidation_eur": str(values["NetLiquidation"]),
         "available_funds_eur": str(values["AvailableFunds"]),
         "buying_power_eur": str(values.get("BuyingPower", "0")),
         "total_cash_value_eur": str(values["TotalCashValue"]),
-        "gross_position_value_eur": str(
-            values.get("GrossPositionValue", "0")
-        ),
+        "gross_position_value_eur": str(values.get("GrossPositionValue", "0")),
         "reporting_value_eur": economic.get("reporting_value_eur"),
         "reporting_cash_eur": economic.get("reporting_cash_eur"),
         "spendable_eur": economic.get("spendable_eur"),
         "research_sizing_capacity_eur": research_capacity,
-        "execution_sizing_capacity_eur": economic.get(
-            "execution_sizing_capacity_eur"
-        ),
-        "eur_available_for_new_longs": economic.get(
-            "eur_available_for_new_longs"
-        ),
+        "execution_sizing_capacity_eur": economic.get("execution_sizing_capacity_eur"),
+        "eur_available_for_new_longs": economic.get("eur_available_for_new_longs"),
         "economic_account_lifecycle": economic.get("lifecycle_state"),
         "execution_account_status": economic.get("execution_status"),
-        "execution_account_blockers": economic.get(
-            "execution_blockers", []
-        ),
+        "execution_account_blockers": economic.get("execution_blockers", []),
         "buying_power_is_cash": False,
         "net_liquidation_is_deployable_cash": False,
         "implicit_fx_conversion_assumed": False,
-        "account_authority": snapshot.get(
-            "account_authority", account_authority
-        ),
-        "snapshot_source": snapshot.get(
-            "observation_environment", "PHASE8_READ_ONLY"
-        ),
+        "account_authority": snapshot.get("account_authority", account_authority),
+        "snapshot_source": snapshot.get("observation_environment", "PHASE8_READ_ONLY"),
         "snapshot_age_seconds": snapshot.get("snapshot_age_seconds"),
-        "fresh_reconciliation": bool(
-            snapshot.get("observation_environment") == "LIVE_READ_ONLY"
-        ),
+        "fresh_reconciliation": bool(snapshot.get("observation_environment") == "LIVE_READ_ONLY"),
         "execution_eligible": False,
         "equity_observed": True,
         "available_funds_observed": True,
@@ -2854,9 +2296,7 @@ def _record_action_cycle(
     private_root.mkdir(parents=True, exist_ok=True)
     path = private_root / "portfolio_actions.sqlite3"
     decision_payload = {
-        "account_snapshot_hash": private_sizing.get(
-            "account_snapshot_hash"
-        ),
+        "account_snapshot_hash": private_sizing.get("account_snapshot_hash"),
         "policy_hash": stable_hash(policy),
         "actions": [
             {
@@ -2873,15 +2313,9 @@ def _record_action_cycle(
                 "ticker": row["ticker"],
                 "current_quantity": row["current_quantity"],
                 "target_quantity": row["target_quantity"],
-                "planned_quantity_delta": row[
-                    "planned_quantity_delta"
-                ],
-                "opportunity_score": row.get(
-                    "opportunity_score"
-                ),
-                "research_target_weight": row.get(
-                    "research_target_weight"
-                ),
+                "planned_quantity_delta": row["planned_quantity_delta"],
+                "opportunity_score": row.get("opportunity_score"),
+                "research_target_weight": row.get("research_target_weight"),
             }
             for row in private_sizing.get("positions", [])
         ],
@@ -2926,10 +2360,7 @@ def _record_action_cycle(
             ),
         )
         cycle_inserted = connection.total_changes > before
-        sizing_map = {
-            row["ticker"]: row
-            for row in private_sizing.get("positions", [])
-        }
+        sizing_map = {row["ticker"]: row for row in private_sizing.get("positions", [])}
         inserted_events = 0
         for action in actions:
             private_row = sizing_map.get(action["ticker"])
@@ -2955,26 +2386,14 @@ def _record_action_cycle(
                     action["ticker"],
                     action["advisory_action"],
                     json.dumps(action["reason_codes"], sort_keys=True),
-                    (
-                        json.dumps(private_row, sort_keys=True)
-                        if private_row
-                        else None
-                    ),
+                    (json.dumps(private_row, sort_keys=True) if private_row else None),
                     now,
                 ),
             )
             inserted_events += int(connection.total_changes > before)
         connection.commit()
-        cycle_count = int(
-            connection.execute(
-                "SELECT COUNT(*) FROM decision_cycles"
-            ).fetchone()[0]
-        )
-        event_count = int(
-            connection.execute(
-                "SELECT COUNT(*) FROM action_events"
-            ).fetchone()[0]
-        )
+        cycle_count = int(connection.execute("SELECT COUNT(*) FROM decision_cycles").fetchone()[0])
+        event_count = int(connection.execute("SELECT COUNT(*) FROM action_events").fetchone()[0])
     return {
         "schema": "portfolio_action_lifecycle_audit_v1",
         "status": "GO",
@@ -2992,13 +2411,9 @@ def _record_action_cycle(
 
 
 def _capacity_map(project_root: Path) -> dict[str, Decimal]:
-    payload = _read_json(
-        project_root / "output/capital/capacity_report.json"
-    )
+    payload = _read_json(project_root / "output/capital/capacity_report.json")
     return {
-        str(row.get("symbol", "")).upper(): _decimal(
-            row.get("maximum_order_value_eur")
-        )
+        str(row.get("symbol", "")).upper(): _decimal(row.get("maximum_order_value_eur"))
         for row in payload.get("instruments", [])
         if row.get("symbol")
     }
@@ -3018,9 +2433,7 @@ def _fx_map(project_root: Path) -> dict[str, Decimal]:
         frame = frame.sort_values(order)
     for _, row in frame.iterrows():
         if str(row["quote_currency"]).upper() == "EUR":
-            rates[str(row["base_currency"]).upper()] = _decimal(
-                row["rate"]
-            )
+            rates[str(row["base_currency"]).upper()] = _decimal(row["rate"])
     return rates
 
 
@@ -3071,9 +2484,7 @@ def _blocked_private_sizing(reason: str) -> dict[str, Any]:
 
 def _load_signals(project_root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    canonical = _read_json(
-        project_root / "output/signals/latest_signals.json"
-    )
+    canonical = _read_json(project_root / "output/signals/latest_signals.json")
     rows.extend(
         {
             **row,
@@ -3086,18 +2497,12 @@ def _load_signals(project_root: Path) -> list[dict[str, Any]]:
     )
     for name in ("pit_mtf_signals.json", "pit_mtf_research_signals.json"):
         payload = _read_json_or_list(project_root / "output/signals" / name)
-        source_rows = payload if isinstance(payload, list) else payload.get(
-            "signals", []
-        )
+        source_rows = payload if isinstance(payload, list) else payload.get("signals", [])
         rows.extend(
             {
                 **row,
-                "_portfolio_eligible_source": (
-                    name == "pit_mtf_signals.json"
-                ),
-                "_research_allocation_eligible_source": (
-                    name == "pit_mtf_signals.json"
-                ),
+                "_portfolio_eligible_source": (name == "pit_mtf_signals.json"),
+                "_research_allocation_eligible_source": (name == "pit_mtf_signals.json"),
                 "_deployment_eligible_source": False,
                 "_evidence_tier": (
                     "FROZEN_MTF_CURRENT_PIT"
@@ -3115,6 +2520,15 @@ def _load_signals(project_root: Path) -> list[dict[str, Any]]:
     market_references: dict[str, dict[str, Any]] = {}
     for row in rows:
         row = normalize_research_signal_price_basis(project_root, row)
+        if not isinstance(row.get("strategy_timeframe_contract"), dict):
+            row["strategy_timeframe_contract"] = declared_research_signal_timeframe_contract(
+                project_root,
+                row,
+            )
+        if not row.get("strategy_family"):
+            row["strategy_family"] = str(
+                row.get("family") or row.get("entry_strategy") or row.get("formula") or "UNDECLARED"
+            )
         symbol = str(row.get("ticker") or row.get("asset") or "").upper()
         if symbol not in market_references:
             market_references[symbol] = latest_market_reference(
@@ -3131,19 +2545,11 @@ def _load_signals(project_root: Path) -> list[dict[str, Any]]:
         freshness = evaluate_signal_freshness(row, now=now)
         if not freshness["is_current"]:
             continue
-        row["expiration_timestamp"] = freshness[
-            "effective_expiration"
-        ].isoformat()
+        row["expiration_timestamp"] = freshness["effective_expiration"].isoformat()
         row["data_freshness"] = "FRESH"
-        row["signal_freshness_basis"] = freshness[
-            "freshness_basis"
-        ]
+        row["signal_freshness_basis"] = freshness["freshness_basis"]
         row["signal_freshness"] = {
-            key: (
-                value.isoformat()
-                if isinstance(value, datetime)
-                else value
-            )
+            key: (value.isoformat() if isinstance(value, datetime) else value)
             for key, value in freshness.items()
             if key != "is_current"
         }
@@ -3195,7 +2601,8 @@ def _screened_portfolio_signals(
         )
         rows.append(
             {
-                "signal_id": "SCREENER-" + stable_hash(
+                "signal_id": "SCREENER-"
+                + stable_hash(
                     {
                         "ticker": ticker,
                         "decision_time": item.get("decision_time"),
@@ -3215,22 +2622,13 @@ def _screened_portfolio_signals(
                 "stop_loss": str(stop),
                 "stop_distance_pct": str((price - stop) / price),
                 "currency": str(item.get("currency") or "UNKNOWN"),
-                "shariah_status": str(
-                    item.get("shariah_status") or "SHARIAH_DATA_UNAVAILABLE"
-                ),
-                "shariah_screened_at": item.get(
-                    "data_timestamps", {}
-                ).get("shariah_screened_at"),
-                "shariah_expires_at": item.get(
-                    "data_timestamps", {}
-                ).get("shariah_expires_at"),
+                "shariah_status": str(item.get("shariah_status") or "SHARIAH_DATA_UNAVAILABLE"),
+                "shariah_screened_at": item.get("data_timestamps", {}).get("shariah_screened_at"),
+                "shariah_expires_at": item.get("data_timestamps", {}).get("shariah_expires_at"),
                 "reasons": [
                     "BROAD_SCREENER_PORTFOLIO_CANDIDATE",
                     f"SCREENER_{classification}",
-                    *[
-                        str(reason)
-                        for reason in item.get("selection_reasons", [])
-                    ],
+                    *[str(reason) for reason in item.get("selection_reasons", [])],
                 ],
                 "_portfolio_eligible_source": True,
                 "_research_allocation_eligible_source": True,
@@ -3250,9 +2648,7 @@ def _runtime_screener_expiration(item: dict[str, Any]) -> str | None:
         else:
             decision = decision.tz_convert("UTC")
         expiry = decision + pd.Timedelta(days=3)
-        shariah_expiry = item.get("data_timestamps", {}).get(
-            "shariah_expires_at"
-        )
+        shariah_expiry = item.get("data_timestamps", {}).get("shariah_expires_at")
         if shariah_expiry:
             shariah_timestamp = pd.Timestamp(shariah_expiry)
             if shariah_timestamp.tzinfo is None:
@@ -3291,9 +2687,7 @@ def _effective_dynamic_override_blockers(
         "SHARIAH_COMPLIANT",
     }
     return [
-        blocker
-        for blocker in blockers
-        if not (shariah_verified and blocker.startswith("SHARIAH_"))
+        blocker for blocker in blockers if not (shariah_verified and blocker.startswith("SHARIAH_"))
     ]
 
 
@@ -3328,9 +2722,7 @@ def _latest_screener_records(
     if selected_path is None:
         return [], None
     records = [
-        row
-        for row in payload.get("records", [])
-        if isinstance(row, dict) and row.get("symbol")
+        row for row in payload.get("records", []) if isinstance(row, dict) and row.get("symbol")
     ]
     return records, str(selected_path.relative_to(project_root))
 
@@ -3346,9 +2738,7 @@ def build_opportunity_funnel(
     settings = policy.get("candidate_funnel", {})
     per_family = int(settings.get("per_family_limit", 20))
     maximum_watch = int(settings.get("maximum_watchlist_candidates", 100))
-    maximum_rejections = int(
-        settings.get("maximum_rejection_audit_rows", 50)
-    )
+    maximum_rejections = int(settings.get("maximum_rejection_audit_rows", 50))
     hidden_gem_minimum_market_cap = float(
         settings.get("hidden_gem_minimum_market_cap", 300_000_000)
     )
@@ -3366,12 +2756,8 @@ def build_opportunity_funnel(
         or str(row.get("classification") or "").upper()
         in {"HIGH_POTENTIAL", "WATCHLIST", "NEUTRAL"}
     ]
-    rejected_screen_records = [
-        row for row in records if row not in qualified_records
-    ]
-    screen_map = {
-        str(row.get("symbol") or "").upper(): row for row in records
-    }
+    rejected_screen_records = [row for row in records if row not in qualified_records]
+    screen_map = {str(row.get("symbol") or "").upper(): row for row in records}
     ranked_map = {str(row["ticker"]): row for row in ranked}
     metadata = policy.get("asset_metadata", {})
 
@@ -3397,45 +2783,25 @@ def build_opportunity_funnel(
             group = str(row.get(group_key) or "UNKNOWN").upper()
             groups[group].append(row)
         for group_rows in groups.values():
-            leaders.append(
-                max(group_rows, key=lambda row: _number(row.get(key)))
-            )
+            leaders.append(max(group_rows, key=lambda row: _number(row.get(key))))
         return top_by(key, leaders)
 
     def metadata_sector(row: dict[str, Any]) -> str:
         symbol = str(row.get("symbol") or "").upper()
-        return str(
-            metadata.get(symbol, {}).get("sector")
-            or row.get("sector")
-            or ""
-        ).upper()
+        return str(metadata.get(symbol, {}).get("sector") or row.get("sector") or "").upper()
 
     def metadata_sleeve(row: dict[str, Any]) -> str:
         symbol = str(row.get("symbol") or "").upper()
         return str(metadata.get(symbol, {}).get("sleeve") or "stock")
 
-    etf_rows = [
-        row
-        for row in qualified_records
-        if str(row.get("asset_type")) != "STOCK"
-    ]
+    etf_rows = [row for row in qualified_records if str(row.get("asset_type")) != "STOCK"]
     real_asset_rows = [
-        row
-        for row in qualified_records
-        if metadata_sleeve(row) == "commodity_security"
+        row for row in qualified_records if metadata_sleeve(row) == "commodity_security"
     ]
-    equity_rows = [
-        row
-        for row in qualified_records
-        if str(row.get("asset_type")) == "STOCK"
-    ]
-    current_gainers = [
-        row for row in qualified_records if _number(row.get("daily_return")) > 0
-    ]
+    equity_rows = [row for row in qualified_records if str(row.get("asset_type")) == "STOCK"]
+    current_gainers = [row for row in qualified_records if _number(row.get("daily_return")) > 0]
     current_pullbacks = [
-        row
-        for row in qualified_records
-        if -0.05 <= _number(row.get("daily_return")) < 0
+        row for row in qualified_records if -0.05 <= _number(row.get("daily_return")) < 0
     ]
     hidden_gem_rows = [
         row
@@ -3448,44 +2814,28 @@ def build_opportunity_funnel(
     def real_asset_family(*terms: str) -> list[dict[str, Any]]:
         needles = {term.upper() for term in terms}
         return [
-            row
-            for row in real_asset_rows
-            if any(term in metadata_sector(row) for term in needles)
+            row for row in real_asset_rows if any(term in metadata_sector(row) for term in needles)
         ]
 
     family_symbols: dict[str, list[str]] = {
         "TREND_LEADERS": top_by("technical_score", qualified_records),
-        "QUALITY_FUNDAMENTALS": top_by(
-            "fundamental_score", qualified_records
-        ),
-        "LIQUIDITY_LEADERS": top_by(
-            "liquidity_score", qualified_records
-        ),
+        "QUALITY_FUNDAMENTALS": top_by("fundamental_score", qualified_records),
+        "LIQUIDITY_LEADERS": top_by("liquidity_score", qualified_records),
         "RISK_QUALITY": top_by("risk_score", qualified_records),
-        "SECTOR_LEADERS": top_per_group(
-            "total_score", equity_rows, "sector"
-        ),
-        "INDUSTRY_LEADERS": top_per_group(
-            "total_score", equity_rows, "industry"
-        ),
+        "SECTOR_LEADERS": top_per_group("total_score", equity_rows, "sector"),
+        "INDUSTRY_LEADERS": top_per_group("total_score", equity_rows, "industry"),
         "HIDDEN_GEMS": top_by("total_score", hidden_gem_rows),
         "CURRENT_GAINERS": top_by("total_score", current_gainers),
         "CURRENT_PULLBACKS": top_by("technical_score", current_pullbacks),
         "ETF_ROTATION": top_by("total_score", etf_rows),
         "REAL_ASSETS": top_by("total_score", real_asset_rows),
-        "COPPER_COMPLEX": top_by(
-            "total_score", real_asset_family("COPPER")
-        ),
-        "URANIUM_COMPLEX": top_by(
-            "total_score", real_asset_family("URANIUM", "NUCLEAR")
-        ),
+        "COPPER_COMPLEX": top_by("total_score", real_asset_family("COPPER")),
+        "URANIUM_COMPLEX": top_by("total_score", real_asset_family("URANIUM", "NUCLEAR")),
         "PRECIOUS_METALS": top_by(
             "total_score",
             real_asset_family("GOLD", "SILVER", "PLATINUM", "PALLADIUM"),
         ),
-        "ENERGY_COMPLEX": top_by(
-            "total_score", real_asset_family("ENERGY", "OIL", "GAS")
-        ),
+        "ENERGY_COMPLEX": top_by("total_score", real_asset_family("ENERGY", "OIL", "GAS")),
         "DEFENSIVE_ETFS": top_by(
             "total_score",
             [row for row in etf_rows if metadata_sleeve(row) == "bond_defensive"],
@@ -3521,12 +2871,9 @@ def build_opportunity_funnel(
         opportunity = ranked_map.get(ticker, {})
         screen = screen_map.get(ticker, {})
         score = float(
-            opportunity.get("opportunity_score")
-            or (_number(screen.get("total_score")) / 100.0)
+            opportunity.get("opportunity_score") or (_number(screen.get("total_score")) / 100.0)
         )
-        research_blockers = list(
-            opportunity.get("research_allocation_blockers") or []
-        )
+        research_blockers = list(opportunity.get("research_allocation_blockers") or [])
         if opportunity.get("deployment_eligible"):
             stage = "EXECUTION_CANDIDATE"
         elif opportunity and not research_blockers and score >= minimum_score:
@@ -3536,15 +2883,8 @@ def build_opportunity_funnel(
         rejection_reasons = sorted(
             {
                 *research_blockers,
-                *(
-                    str(value)
-                    for value in screen.get("rejection_reasons", [])
-                ),
-                *(
-                    []
-                    if opportunity
-                    else ["NOT_IN_CURRENT_STRATEGY_SIGNAL_SET"]
-                ),
+                *(str(value) for value in screen.get("rejection_reasons", [])),
+                *([] if opportunity else ["NOT_IN_CURRENT_STRATEGY_SIGNAL_SET"]),
             }
         )
         candidates.append(
@@ -3552,41 +2892,25 @@ def build_opportunity_funnel(
                 "rank": rank,
                 "symbol": ticker,
                 "candidate_stage": stage,
-                "asset_type": opportunity.get(
-                    "asset_type", screen.get("asset_type", "UNKNOWN")
-                ),
+                "asset_type": opportunity.get("asset_type", screen.get("asset_type", "UNKNOWN")),
                 "sleeve": opportunity.get(
                     "sleeve",
                     metadata.get(ticker, {}).get("sleeve", "stock"),
                 ),
-                "sector": opportunity.get(
-                    "sector", screen.get("sector", "UNKNOWN")
-                ),
-                "industry": opportunity.get(
-                    "industry", screen.get("industry", "UNKNOWN")
-                ),
+                "sector": opportunity.get("sector", screen.get("sector", "UNKNOWN")),
+                "industry": opportunity.get("industry", screen.get("industry", "UNKNOWN")),
                 "market_cap": screen.get("market_cap"),
-                "fundamental_coverage": screen.get(
-                    "fundamental_coverage"
-                ),
+                "fundamental_coverage": screen.get("fundamental_coverage"),
                 "opportunity_score": round(score, 6),
-                "preliminary_rank_utility": round(
-                    score - minimum_score, 6
-                ),
-                "utility_semantics": (
-                    "RANK_MARGIN_NOT_EXPECTED_RETURN"
-                ),
+                "preliminary_rank_utility": round(score - minimum_score, 6),
+                "utility_semantics": ("RANK_MARGIN_NOT_EXPECTED_RETURN"),
                 "screener_classification": screen.get("classification"),
                 "research_allocation_eligible": bool(
                     opportunity.get("research_allocation_eligible", False)
                 ),
-                "deployment_eligible": bool(
-                    opportunity.get("deployment_eligible", False)
-                ),
+                "deployment_eligible": bool(opportunity.get("deployment_eligible", False)),
                 "rejection_stage": (
-                    None
-                    if stage != "WATCHLIST_CANDIDATE"
-                    else "PORTFOLIO_QUALIFICATION"
+                    None if stage != "WATCHLIST_CANDIDATE" else "PORTFOLIO_QUALIFICATION"
                 ),
                 "rejection_reasons": rejection_reasons,
                 "candidate_sources": sorted(
@@ -3600,29 +2924,20 @@ def build_opportunity_funnel(
                     }
                 ),
                 "screening_families": sorted(
-                    family
-                    for family, symbols in family_symbols.items()
-                    if ticker in symbols
+                    family for family, symbols in family_symbols.items() if ticker in symbols
                 ),
             }
         )
     portfolio_candidates = [
         row
         for row in candidates
-        if row["candidate_stage"]
-        in {"PORTFOLIO_CANDIDATE", "EXECUTION_CANDIDATE"}
+        if row["candidate_stage"] in {"PORTFOLIO_CANDIDATE", "EXECUTION_CANDIDATE"}
     ]
     execution_candidates = [
-        row
-        for row in candidates
-        if row["candidate_stage"] == "EXECUTION_CANDIDATE"
+        row for row in candidates if row["candidate_stage"] == "EXECUTION_CANDIDATE"
     ]
     rejection_audit = sorted(
-        (
-            row
-            for row in candidates
-            if row["candidate_stage"] == "WATCHLIST_CANDIDATE"
-        ),
+        (row for row in candidates if row["candidate_stage"] == "WATCHLIST_CANDIDATE"),
         key=lambda row: (-float(row["preliminary_rank_utility"]), row["symbol"]),
     )[:maximum_rejections]
     screening_rejection_audit = [
@@ -3634,18 +2949,14 @@ def build_opportunity_funnel(
             "industry": row.get("industry", "UNKNOWN"),
             "market_cap": row.get("market_cap"),
             "fundamental_coverage": row.get("fundamental_coverage"),
-            "opportunity_score": round(
-                _number(row.get("total_score")) / 100.0, 6
-            ),
+            "opportunity_score": round(_number(row.get("total_score")) / 100.0, 6),
             "preliminary_rank_utility": round(
                 _number(row.get("total_score")) / 100.0 - minimum_score,
                 6,
             ),
             "utility_semantics": "RANK_MARGIN_NOT_EXPECTED_RETURN",
             "rejection_stage": "SCREENING_QUALIFICATION",
-            "rejection_reasons": sorted(
-                str(value) for value in row.get("rejection_reasons", [])
-            ),
+            "rejection_reasons": sorted(str(value) for value in row.get("rejection_reasons", [])),
         }
         for row in sorted(
             rejected_screen_records,
@@ -3663,20 +2974,12 @@ def build_opportunity_funnel(
             -_number(item.get("total_score")),
         ),
     ):
-        rejection_reasons = sorted(
-            str(value) for value in row.get("rejection_reasons", [])
-        )
-        shariah_reasons = [
-            reason
-            for reason in rejection_reasons
-            if reason.startswith("SHARIAH_")
-        ]
+        rejection_reasons = sorted(str(value) for value in row.get("rejection_reasons", []))
+        shariah_reasons = [reason for reason in rejection_reasons if reason.startswith("SHARIAH_")]
         if not shariah_reasons:
             continue
         other_reasons = [
-            reason
-            for reason in rejection_reasons
-            if not reason.startswith("SHARIAH_")
+            reason for reason in rejection_reasons if not reason.startswith("SHARIAH_")
         ]
         shariah_review_queue.append(
             {
@@ -3699,25 +3002,17 @@ def build_opportunity_funnel(
         )
         if len(shariah_review_queue) >= per_family:
             break
-    universe = _read_json(
-        project_root / "output/analysis/universe-coverage.json"
-    )
+    universe = _read_json(project_root / "output/analysis/universe-coverage.json")
     report = {
         "schema": "portfolio_opportunity_funnel_v1",
         "status": "GO",
         "generated_at": datetime.now(UTC).isoformat(),
-        "universe_instrument_count": int(
-            universe.get("universe_instrument_count", 0) or 0
-        ),
-        "analyzable_instrument_count": int(
-            universe.get("analyzable_instrument_count", 0) or 0
-        ),
+        "universe_instrument_count": int(universe.get("universe_instrument_count", 0) or 0),
+        "analyzable_instrument_count": int(universe.get("analyzable_instrument_count", 0) or 0),
         "latest_screener_record_count": len(records),
         "qualified_screener_record_count": len(qualified_records),
         "rejected_screener_record_count": len(rejected_screen_records),
-        "screener_current_classification_required": (
-            require_current_classification
-        ),
+        "screener_current_classification_required": (require_current_classification),
         "current_signal_count": len(signals),
         "current_signal_symbol_count": len(
             {
@@ -3731,8 +3026,7 @@ def build_opportunity_funnel(
         "portfolio_candidate_count": len(portfolio_candidates),
         "execution_candidate_count": len(execution_candidates),
         "screened_family_counts": {
-            family: len(set(symbols))
-            for family, symbols in sorted(family_symbols.items())
+            family: len(set(symbols)) for family, symbols in sorted(family_symbols.items())
         },
         "screening_family_statuses": {
             "industry_leaders": (
@@ -3740,9 +3034,7 @@ def build_opportunity_funnel(
                 if not any(row.get("industry") for row in records)
                 else "AVAILABLE"
             ),
-            "industry_coverage_count": sum(
-                1 for row in records if row.get("industry")
-            ),
+            "industry_coverage_count": sum(1 for row in records if row.get("industry")),
             "hidden_gems": (
                 "UNAVAILABLE_MARKET_CAP_NOT_IN_CURRENT_SCREENER_RECORD_SCHEMA"
                 if not any(row.get("market_cap") for row in records)
@@ -3821,15 +3113,9 @@ def _phase_survivor_signals(
         )
         if row.get("robust_pass")
         and row.get("portfolio_invariants_go")
-        and (
-            not require_forward_candidate
-            or row.get("forward_observer_candidate")
-        )
+        and (not require_forward_candidate or row.get("forward_observer_candidate"))
     }
-    frozen_ids = {
-        str(value)
-        for value in boundary.get("robust_strategy_ids", [])
-    }
+    frozen_ids = {str(value) for value in boundary.get("robust_strategy_ids", [])}
     rows: list[dict[str, Any]] = []
     for item in observation.get("observations", []):
         strategy_id = str(item.get("strategy_id", ""))
@@ -3840,9 +3126,7 @@ def _phase_survivor_signals(
         if closed is None:
             continue
         timeframe = str(item.get("timeframe", "1d"))
-        declared_expiry = closed + timedelta(
-            days=8 if timeframe == "1w" else 4
-        )
+        declared_expiry = closed + timedelta(days=8 if timeframe == "1w" else 4)
         for ticker, raw_weight in item.get(
             "current_attested_target_weights",
             {},
@@ -3877,12 +3161,7 @@ def _phase_survivor_signals(
                 0.55
                 + max(
                     0.0,
-                    _number(
-                        metrics.get(
-                            "combined_period_profit_factor"
-                        )
-                    )
-                    - 1.0,
+                    _number(metrics.get("combined_period_profit_factor")) - 1.0,
                 )
                 * 0.35
                 + max(
@@ -3900,9 +3179,7 @@ def _phase_survivor_signals(
                                 "strategy_id": strategy_id,
                                 "ticker": str(ticker).upper(),
                                 "closed_bar_timestamp": closed.isoformat(),
-                                "qualification_hash": boundary.get(
-                                    "qualification_hash"
-                                ),
+                                "qualification_hash": boundary.get("qualification_hash"),
                             }
                         )[:20]
                     ),
@@ -3912,21 +3189,13 @@ def _phase_survivor_signals(
                     "action": "BUY",
                     "confidence_score": round(confidence, 6),
                     "data_timestamp": closed.isoformat(),
-                    "data_freshness": (
-                        "FRESH"
-                        if expiry >= datetime.now(UTC)
-                        else "STALE"
-                    ),
+                    "data_freshness": ("FRESH" if expiry >= datetime.now(UTC) else "STALE"),
                     "exchange_timezone": exchange_timezone,
-                    "signal_freshness_basis": freshness[
-                        "freshness_basis"
-                    ],
+                    "signal_freshness_basis": freshness["freshness_basis"],
                     "expiration_timestamp": expiry.isoformat(),
                     "preferred_entry": str(price),
                     "stop_loss": str(stop),
-                    "stop_distance_pct": str(
-                        (price - stop) / price
-                    ),
+                    "stop_distance_pct": str((price - stop) / price),
                     "reasons": [
                         "ROBUSTNESS_SURVIVOR",
                         "FROZEN_QUALIFICATION_BOUNDARY",
@@ -3948,9 +3217,7 @@ def _latest_price_and_stop(
     ticker: str,
 ) -> tuple[float, float]:
     legacy_path = (
-        project_root
-        / "data/research/critical_trading/yfinance"
-        / f"{ticker.upper()}.parquet"
+        project_root / "data/research/critical_trading/yfinance" / f"{ticker.upper()}.parquet"
     )
     frame = _latest_validated_daily_frame(project_root, ticker)
     if frame.empty and legacy_path.exists():
@@ -3995,10 +3262,7 @@ def _latest_validated_daily_frame(
     ticker: str,
 ) -> pd.DataFrame:
     root = project_root / "data/research/multitimeframe/private"
-    pattern = (
-        f"provider=*/symbol={ticker.upper()}"
-        "/interval=1d/source_interval=1d/bars.parquet"
-    )
+    pattern = f"provider=*/symbol={ticker.upper()}/interval=1d/source_interval=1d/bars.parquet"
     candidates: list[tuple[pd.Timestamp, pd.DataFrame]] = []
     for path in sorted(root.glob(pattern)):
         try:
@@ -4008,9 +3272,7 @@ def _latest_validated_daily_frame(
         if frame.empty:
             continue
         if "quality_status" in frame:
-            frame = frame[
-                frame["quality_status"].astype(str).eq("VALIDATED_OHLC")
-            ]
+            frame = frame[frame["quality_status"].astype(str).eq("VALIDATED_OHLC")]
         if "is_partial" in frame:
             frame = frame[~frame["is_partial"].fillna(True).astype(bool)]
         timestamp_column = (
@@ -4021,27 +3283,16 @@ def _latest_validated_daily_frame(
             else None
         )
         required = {"open", "high", "low", "close"}
-        if (
-            frame.empty
-            or timestamp_column is None
-            or not required.issubset(frame.columns)
-        ):
+        if frame.empty or timestamp_column is None or not required.issubset(frame.columns):
             continue
         frame = frame.copy()
         raw_close = pd.to_numeric(frame["close"], errors="coerce")
-        adjusted_close = pd.to_numeric(
-            frame.get("adjusted_close", raw_close), errors="coerce"
-        )
+        adjusted_close = pd.to_numeric(frame.get("adjusted_close", raw_close), errors="coerce")
         adjustment = (
-            adjusted_close.div(raw_close)
-            .replace([float("inf"), float("-inf")], pd.NA)
-            .fillna(1.0)
+            adjusted_close.div(raw_close).replace([float("inf"), float("-inf")], pd.NA).fillna(1.0)
         )
         for column in ("open", "high", "low", "close"):
-            frame[column] = (
-                pd.to_numeric(frame[column], errors="coerce")
-                * adjustment
-            )
+            frame[column] = pd.to_numeric(frame[column], errors="coerce") * adjustment
         frame = frame.dropna(subset=["open", "high", "low", "close"])
         frame = frame.sort_values(timestamp_column)
         if frame.empty:
@@ -4068,9 +3319,7 @@ def _signal_exchange_timezone(
         / f"symbol={ticker.upper()}"
         / f"interval={timeframe}"
     )
-    for path in sorted(
-        interval_root.glob("source_interval=*/bars.parquet")
-    ):
+    for path in sorted(interval_root.glob("source_interval=*/bars.parquet")):
         try:
             frame = pd.read_parquet(
                 path,
@@ -4092,10 +3341,7 @@ def _contract_map(
     if not path.exists():
         return {}
     frame = pd.read_parquet(path)
-    contracts = {
-        str(row["symbol"]).upper(): row.to_dict()
-        for _, row in frame.iterrows()
-    }
+    contracts = {str(row["symbol"]).upper(): row.to_dict() for _, row in frame.iterrows()}
     for portfolio_symbol, metadata in (asset_metadata or {}).items():
         if not isinstance(metadata, dict):
             continue
@@ -4118,24 +3364,15 @@ def _fundamental_map(project_root: Path) -> dict[str, dict[str, Any]]:
     frame = pd.read_parquet(path)
     if frame.empty or "symbol" not in frame:
         return {}
-    order = (
-        "decision_time"
-        if "decision_time" in frame
-        else "screening_date"
-    )
+    order = "decision_time" if "decision_time" in frame else "screening_date"
     latest = frame.sort_values(order).groupby("symbol", sort=False).tail(1)
-    return {
-        str(row["symbol"]).upper(): row.to_dict()
-        for _, row in latest.iterrows()
-    }
+    return {str(row["symbol"]).upper(): row.to_dict() for _, row in latest.iterrows()}
 
 
 def _asset_context_map(
     project_root: Path,
 ) -> dict[str, dict[str, Any]]:
-    rows = _read_json(
-        project_root / "output/market_context/asset-context.json"
-    ).get("contexts", [])
+    rows = _read_json(project_root / "output/market_context/asset-context.json").get("contexts", [])
     return {
         str(row["symbol"]).upper(): row
         for row in rows
@@ -4144,32 +3381,24 @@ def _asset_context_map(
 
 
 def _strategy_family_map(project_root: Path) -> dict[str, str]:
-    rows = _read_json(
-        project_root / "output/research/recovered_survivors.json"
-    ).get("survivors", [])
+    rows = _read_json(project_root / "output/research/recovered_survivors.json").get(
+        "survivors", []
+    )
     rows.extend(
-        _read_json(
-            project_root / "config/dynamic/strategies_v1.json"
-        ).get("strategies", [])
+        _read_json(project_root / "config/dynamic/strategies_v1.json").get("strategies", [])
     )
     families = {
-        str(row["candidate_id"]): str(
-            row.get("family") or row.get("strategy_name") or "unknown"
-        )
+        str(row["candidate_id"]): str(row.get("family") or row.get("strategy_name") or "unknown")
         for row in rows
         if row.get("candidate_id")
     }
-    phase11_14 = (
-        project_root / "output/research/phase11_14/strategy-summary.parquet"
-    )
+    phase11_14 = project_root / "output/research/phase11_14/strategy-summary.parquet"
     if phase11_14.exists():
         frame = pd.read_parquet(phase11_14)
         if {"strategy_id", "formula"}.issubset(frame.columns):
             families.update(
                 {
-                    str(row["strategy_id"]): infer_strategy_family(
-                        str(row["formula"])
-                    )
+                    str(row["strategy_id"]): infer_strategy_family(str(row["formula"]))
                     for _, row in frame.iterrows()
                 }
             )
@@ -4177,9 +3406,7 @@ def _strategy_family_map(project_root: Path) -> dict[str, str]:
 
 
 def _dynamic_strategy_weights(project_root: Path) -> dict[str, float]:
-    rows = _read_json(
-        project_root / "output/dynamic/strategy_weights.json"
-    ).get("weights", [])
+    rows = _read_json(project_root / "output/dynamic/strategy_weights.json").get("weights", [])
     return {
         str(row["strategy_id"]): max(0.0, _number(row.get("weight")))
         for row in rows
@@ -4190,14 +3417,8 @@ def _dynamic_strategy_weights(project_root: Path) -> dict[str, float]:
 def _dynamic_overrides(
     project_root: Path,
 ) -> dict[str, dict[str, Any]]:
-    rows = _read_json(
-        project_root / "output/dynamic/current_signals.json"
-    ).get("signals", [])
-    return {
-        str(row.get("ticker", "")).upper(): row
-        for row in rows
-        if row.get("ticker")
-    }
+    rows = _read_json(project_root / "output/dynamic/current_signals.json").get("signals", [])
+    return {str(row.get("ticker", "")).upper(): row for row in rows if row.get("ticker")}
 
 
 def _current_positions(
@@ -4221,9 +3442,7 @@ def _current_positions(
                 "quantity": quantity,
                 "average_cost": _number(item.get("average_cost")),
                 "currency": str(item.get("currency", "UNKNOWN")),
-                "security_type": str(
-                    item.get("security_type", "UNKNOWN")
-                ),
+                "security_type": str(item.get("security_type", "UNKNOWN")),
             }
         )
     return rows, "PRIVATE_BROKER_POSITION_SNAPSHOT_COMPLETE"
@@ -4232,25 +3451,14 @@ def _current_positions(
 def _latest_portfolio_broker_snapshot(
     project_root: Path,
 ) -> dict[str, Any] | None:
-    reconciliation = _read_json(
-        project_root / "output" / "ibkr" / "live" / "reconciliation.json"
-    )
-    expected_hash = str(
-        reconciliation.get("private_snapshot_hash") or ""
-    )
+    reconciliation = _read_json(project_root / "output" / "ibkr" / "live" / "reconciliation.json")
+    expected_hash = str(reconciliation.get("private_snapshot_hash") or "")
     live_db = (
-        project_root
-        / "data"
-        / "execution"
-        / "live"
-        / "private"
-        / "broker_observation.sqlite3"
+        project_root / "data" / "execution" / "live" / "private" / "broker_observation.sqlite3"
     )
     if (
         reconciliation.get("status") == "GO"
-        and str(reconciliation.get("reconciliation_status", "")).startswith(
-            "LIVE_RECONCILED"
-        )
+        and str(reconciliation.get("reconciliation_status", "")).startswith("LIVE_RECONCILED")
         and expected_hash
         and live_db.is_file()
     ):
@@ -4310,12 +3518,7 @@ def _latest_complete_research_account_snapshot(
     authority.
     """
     live_db = (
-        project_root
-        / "data"
-        / "execution"
-        / "live"
-        / "private"
-        / "broker_observation.sqlite3"
+        project_root / "data" / "execution" / "live" / "private" / "broker_observation.sqlite3"
     )
     if not live_db.is_file():
         return None
@@ -4343,9 +3546,7 @@ def _latest_complete_research_account_snapshot(
             continue
         if str(stored_hash) != stable_hash(payload):
             continue
-        completed_at = _timestamp(
-            payload.get("snapshot_completed_at") or created_at
-        )
+        completed_at = _timestamp(payload.get("snapshot_completed_at") or created_at)
         if completed_at is None:
             continue
         age = observed_now - completed_at
@@ -4414,23 +3615,13 @@ def _private_dynamic_risk_inputs(
     equity_history: list[tuple[datetime, Decimal]] = []
     latest = _latest_portfolio_broker_snapshot(project_root)
     live_db = (
-        project_root
-        / "data"
-        / "execution"
-        / "live"
-        / "private"
-        / "broker_observation.sqlite3"
+        project_root / "data" / "execution" / "live" / "private" / "broker_observation.sqlite3"
     )
-    if (
-        latest
-        and latest.get("observation_environment") == "LIVE_READ_ONLY"
-        and live_db.is_file()
-    ):
+    if latest and latest.get("observation_environment") == "LIVE_READ_ONLY" and live_db.is_file():
         try:
             with sqlite3.connect(live_db) as connection:
                 rows = connection.execute(
-                    "SELECT created_at, payload_json FROM snapshots "
-                    "ORDER BY created_at"
+                    "SELECT created_at, payload_json FROM snapshots ORDER BY created_at"
                 ).fetchall()
         except sqlite3.Error:
             rows = []
@@ -4456,9 +3647,7 @@ def _private_dynamic_risk_inputs(
                 equity_history.append((timestamp, net_liquidation))
 
     daily_pnl: list[tuple[date, Decimal]] = []
-    history_path = (
-        project_root / "data" / "performance" / "private" / "daily-pnl.jsonl"
-    )
+    history_path = project_root / "data" / "performance" / "private" / "daily-pnl.jsonl"
     if history_path.is_file():
         for line in history_path.read_text(encoding="utf-8").splitlines():
             try:
@@ -4486,9 +3675,7 @@ def _build_position_management(
     public_rows: list[dict[str, Any]] = []
     for position in positions:
         ticker = str(position["symbol"]).upper()
-        identity = stable_hash(
-            {"con_id": position["con_id"], "symbol": ticker}
-        )[:24]
+        identity = stable_hash({"con_id": position["con_id"], "symbol": ticker})[:24]
         market = _latest_position_market_state(project_root, ticker)
         candidate = ranking.get(ticker, {})
         prior = previous.get(identity, {})
@@ -4558,9 +3745,7 @@ def _build_position_management(
                 "market_data_source": market.get("source"),
                 "atr_timestamp": market.get("atr_timestamp"),
                 "atr_source": market.get("atr_source"),
-                "price_reference_kind": market.get(
-                    "price_reference_kind"
-                ),
+                "price_reference_kind": market.get("price_reference_kind"),
                 "financial_values_public": False,
                 "automatic_execution_allowed": False,
                 "execution_authority": "NONE",
@@ -4644,10 +3829,7 @@ def _latest_position_market_state(
     if reference.get("status") != "FRESH":
         return {
             "status": "DATA_BLOCKED",
-            "reason": (
-                reference.get("reason")
-                or "CURRENT_POSITION_PRICE_REFERENCE_STALE"
-            ),
+            "reason": (reference.get("reason") or "CURRENT_POSITION_PRICE_REFERENCE_STALE"),
             "age_minutes": reference.get("age_minutes"),
             "timestamp": reference.get("timestamp"),
             "source": reference.get("provider"),
@@ -4690,12 +3872,8 @@ def _latest_daily_atr_state(
     ticker: str,
 ) -> dict[str, Any]:
     candidates = list(
-        (
-            project_root
-            / "data/research/multitimeframe/private"
-        ).glob(
-            f"provider=*/symbol={ticker}/interval=1d/"
-            "source_interval=*/bars.parquet"
+        (project_root / "data/research/multitimeframe/private").glob(
+            f"provider=*/symbol={ticker}/interval=1d/source_interval=*/bars.parquet"
         )
     )
     selected: tuple[pd.Timestamp, Path, pd.DataFrame] | None = None
@@ -4705,9 +3883,7 @@ def _latest_daily_atr_state(
         except (OSError, ValueError):
             continue
         if "is_partial" in frame:
-            frame = frame.loc[
-                ~frame["is_partial"].fillna(False).astype(bool)
-            ]
+            frame = frame.loc[~frame["is_partial"].fillna(False).astype(bool)]
         if frame.empty or not {
             "timestamp_utc",
             "close",
@@ -4715,9 +3891,7 @@ def _latest_daily_atr_state(
             "low",
         }.issubset(frame.columns):
             continue
-        timestamps = pd.to_datetime(
-            frame["timestamp_utc"], utc=True, errors="coerce"
-        )
+        timestamps = pd.to_datetime(frame["timestamp_utc"], utc=True, errors="coerce")
         valid = timestamps.notna()
         frame = frame.loc[valid].copy()
         timestamps = timestamps.loc[valid]
@@ -4730,11 +3904,7 @@ def _latest_daily_atr_state(
     if selected is not None:
         latest, path, frame = selected
         provider = next(
-            (
-                part.split("=", 1)[1]
-                for part in path.parts
-                if part.startswith("provider=")
-            ),
+            (part.split("=", 1)[1] for part in path.parts if part.startswith("provider=")),
             "LOCAL_MULTITIMEFRAME_CACHE",
         )
         return _daily_atr_from_frame(
@@ -4743,11 +3913,7 @@ def _latest_daily_atr_state(
             source=provider,
             latest=latest,
         )
-    path = (
-        project_root
-        / "data/research/critical_trading/yfinance"
-        / f"{ticker}.parquet"
-    )
+    path = project_root / "data/research/critical_trading/yfinance" / f"{ticker}.parquet"
     if not path.is_file():
         return {"status": "DATA_BLOCKED", "reason": "DAILY_ATR_UNAVAILABLE"}
     frame = pd.read_parquet(path)
@@ -4795,8 +3961,7 @@ def _daily_atr_from_frame(
     latest = latest.tz_convert("UTC")
     age_hours = max(
         0.0,
-        (datetime.now(UTC) - latest.to_pydatetime()).total_seconds()
-        / 3600.0,
+        (datetime.now(UTC) - latest.to_pydatetime()).total_seconds() / 3600.0,
     )
     if age_hours > 240.0:
         return {
@@ -4827,11 +3992,7 @@ def _correlation_matrix(
     series: dict[str, pd.Series] = {}
     for row in ranked[:40]:
         ticker = row["ticker"]
-        path = (
-            project_root
-            / "data/research/critical_trading/yfinance"
-            / f"{ticker}.parquet"
-        )
+        path = project_root / "data/research/critical_trading/yfinance" / f"{ticker}.parquet"
         if not path.exists():
             continue
         frame = pd.read_parquet(path)
@@ -4861,15 +4022,12 @@ def _metadata(
     fundamental: dict[str, Any],
     contracts: dict[str, dict[str, Any]],
     policy: dict[str, Any],
-) -> dict[str, str]:
+) -> dict[str, Any]:
     configured = policy["asset_metadata"].get(ticker, {})
     producer = commodity_producer_metadata(ticker)
     contract = contracts.get(ticker, {})
     asset_type = str(configured.get("asset_type") or "STOCK")
-    sleeve = str(
-        configured.get("sleeve")
-        or ("stock" if asset_type == "STOCK" else "etf_core")
-    )
+    sleeve = str(configured.get("sleeve") or ("stock" if asset_type == "STOCK" else "etf_core"))
     sector = str(
         configured.get("sector")
         or fundamental.get("sector")
@@ -4881,12 +4039,7 @@ def _metadata(
     region = str(
         configured.get("region")
         or ("EUROPE" if currency == "EUR" else "")
-        or (
-            "UNITED_STATES"
-            if exchange
-            in {"NASDAQ", "NYSE", "ARCA", "AMEX", "BATS"}
-            else ""
-        )
+        or ("UNITED_STATES" if exchange in {"NASDAQ", "NYSE", "ARCA", "AMEX", "BATS"} else "")
         or "UNKNOWN"
     )
     return {
@@ -4894,10 +4047,7 @@ def _metadata(
         "sleeve": sleeve,
         "sector": sector,
         "region": region,
-        "currency": str(
-            configured.get("currency")
-            or ""
-        ).upper(),
+        "currency": str(configured.get("currency") or "").upper(),
         "product_structure": str(
             configured.get("product_structure")
             or producer.get("product_structure")
@@ -4909,9 +4059,17 @@ def _metadata(
             or "NONE"
         ),
         "underlying_commodity": str(
-            configured.get("underlying_commodity")
-            or producer.get("underlying_commodity")
-            or "NONE"
+            configured.get("underlying_commodity") or producer.get("underlying_commodity") or "NONE"
+        ),
+        "product_identity_status": str(
+            configured.get("product_identity_status") or "UNVERIFIED_PHYSICAL_STRUCTURE"
+        ),
+        "physical_structure_verified": bool(configured.get("physical_structure_verified")),
+        "product_identity_screened_at": configured.get("product_identity_screened_at"),
+        "product_identity_expires_at": configured.get("product_identity_expires_at"),
+        "product_identity_source_count": int(configured.get("product_identity_source_count") or 0),
+        "shariah_product_status": str(
+            configured.get("shariah_product_status") or "ATTESTATION_REQUIRED"
         ),
     }
 
@@ -4925,9 +4083,7 @@ def _regime_fit(
     technical = str(technical_regime.get("regime", "UNKNOWN"))
     macro_regime = macro.get("regime", {})
     market = str(macro_regime.get("market_regime", "UNKNOWN"))
-    commodity = str(
-        macro_regime.get("commodity_regime", "UNKNOWN")
-    )
+    commodity = str(macro_regime.get("commodity_regime", "UNKNOWN"))
     if metadata["sleeve"] == "commodity_security":
         return {
             "STRENGTHENING": 0.9,
@@ -4989,24 +4145,16 @@ def _confluence_audit(
                 "ticker": row["ticker"],
                 "status": status,
                 "confluence_score": confluence.get("confluence_score"),
-                "ranking_multiplier": confluence.get(
-                    "ranking_multiplier"
-                ),
-                "base_score_without_confluence": row.get(
-                    "base_score_without_confluence"
-                ),
+                "ranking_multiplier": confluence.get("ranking_multiplier"),
+                "base_score_without_confluence": row.get("base_score_without_confluence"),
                 "final_opportunity_score": row.get("opportunity_score"),
                 "score_delta": row.get("confluence_adjustment"),
                 "layer_statuses": {
                     name: layer.get("status")
                     for name, layer in confluence.get("layers", {}).items()
                 },
-                "allocation_allowed": confluence.get(
-                    "allocation_allowed", False
-                ),
-                "allocation_blockers": confluence.get(
-                    "allocation_blockers", []
-                ),
+                "allocation_allowed": confluence.get("allocation_allowed", False),
+                "allocation_blockers": confluence.get("allocation_blockers", []),
                 "macro_source": confluence.get("macro_source"),
             }
         )
@@ -5015,9 +4163,7 @@ def _confluence_audit(
         "status": "GO" if rows else "NO_CURRENT_OPPORTUNITIES",
         "opportunity_count": len(rows),
         "status_counts": dict(sorted(status_counts.items())),
-        "ablation_method": (
-            "BASE_OPPORTUNITY_SCORE_VERSUS_MULTILAYER_ADJUSTED_SCORE"
-        ),
+        "ablation_method": ("BASE_OPPORTUNITY_SCORE_VERSUS_MULTILAYER_ADJUSTED_SCORE"),
         "rows": rows,
         "technical_signal_required": True,
         "fundamental_or_macro_standalone_entry_allowed": False,
@@ -5044,15 +4190,9 @@ def _news_event_overlay_map(
     overlay_policy = policy.get("news_event_overlay", {})
     if not bool(overlay_policy.get("enabled", False)):
         return {}
-    maximum = float(
-        overlay_policy.get("maximum_absolute_ranking_adjustment", 0.04)
-    )
-    per_event = float(
-        overlay_policy.get("maximum_individual_event_adjustment", 0.015)
-    )
-    minimum_materiality = float(
-        overlay_policy.get("minimum_materiality", 0.22)
-    )
+    maximum = float(overlay_policy.get("maximum_absolute_ranking_adjustment", 0.04))
+    per_event = float(overlay_policy.get("maximum_individual_event_adjustment", 0.015))
+    minimum_materiality = float(overlay_policy.get("minimum_materiality", 0.22))
     grouped: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "event_count": 0,
@@ -5080,16 +4220,10 @@ def _news_event_overlay_map(
             state = grouped[ticker]
             state["event_count"] += 1
             state["raw_adjustment"] += contribution
-            state["hard_risk_flags"].update(
-                str(flag) for flag in row.get("hard_risk_flags", [])
-            )
-            state["event_classes"].update(
-                str(value) for value in row.get("event_classes", [])
-            )
+            state["hard_risk_flags"].update(str(flag) for flag in row.get("hard_risk_flags", []))
+            state["event_classes"].update(str(value) for value in row.get("event_classes", []))
             if row.get("story_cluster_id"):
-                state["story_cluster_ids"].add(
-                    str(row["story_cluster_id"])
-                )
+                state["story_cluster_ids"].add(str(row["story_cluster_id"]))
     return {
         ticker: {
             "schema": "portfolio_news_event_overlay_v1",
@@ -5129,12 +4263,8 @@ def _news_overlay_audit(
             {
                 "ticker": row["ticker"],
                 "event_count": int(context.get("event_count", 0)),
-                "story_cluster_count": int(
-                    context.get("story_cluster_count", 0)
-                ),
-                "score_without_news": row.get(
-                    "opportunity_score_before_news"
-                ),
+                "story_cluster_count": int(context.get("story_cluster_count", 0)),
+                "score_without_news": row.get("opportunity_score_before_news"),
                 "score_with_news": row.get("opportunity_score"),
                 "score_delta": adjustment,
                 "hard_risk_flags": context.get("hard_risk_flags", []),
@@ -5144,26 +4274,14 @@ def _news_overlay_audit(
         )
     return {
         "schema": "portfolio_news_overlay_ablation_v1",
-        "status": (
-            "GO" if source.get("status") == "GO" else "DATA_UNAVAILABLE"
-        ),
+        "status": ("GO" if source.get("status") == "GO" else "DATA_UNAVAILABLE"),
         "source_status": source.get("status", "UNAVAILABLE"),
-        "source_event_count": int(
-            source.get("portfolio_impact_event_count", 0)
-        ),
+        "source_event_count": int(source.get("portfolio_impact_event_count", 0)),
         "contextualized_opportunity_count": len(rows),
-        "adjusted_opportunity_count": sum(
-            abs(float(row["score_delta"])) > 0 for row in rows
-        ),
-        "news_enhanced_opportunity_count": sum(
-            float(row["score_delta"]) > 0 for row in rows
-        ),
-        "news_penalized_opportunity_count": sum(
-            float(row["score_delta"]) < 0 for row in rows
-        ),
-        "hard_risk_review_count": sum(
-            bool(row["hard_risk_flags"]) for row in rows
-        ),
+        "adjusted_opportunity_count": sum(abs(float(row["score_delta"])) > 0 for row in rows),
+        "news_enhanced_opportunity_count": sum(float(row["score_delta"]) > 0 for row in rows),
+        "news_penalized_opportunity_count": sum(float(row["score_delta"]) < 0 for row in rows),
+        "hard_risk_review_count": sum(bool(row["hard_risk_flags"]) for row in rows),
         "rows": rows,
         "historical_financial_validation": "PENDING_CAUSAL_CAR_ABLATION",
         "forward_validation": "PENDING_CLOSED_FORWARD_EPISODES",
@@ -5228,10 +4346,7 @@ def _infer_family(row: dict[str, Any]) -> str:
 
 def _management_policy(families: list[str]) -> dict[str, str]:
     text = " ".join(families).lower()
-    if any(
-        token in text
-        for token in ("mean_reversion", "reversion", "oscillator")
-    ):
+    if any(token in text for token in ("mean_reversion", "reversion", "oscillator")):
         return {
             "stop_method": "STRUCTURAL_OR_VOLATILITY_INVALIDATION",
             "exit_policy": "MEAN_REVERSION_TARGET_OR_SHORT_TIME_STOP",
@@ -5269,10 +4384,7 @@ def _reason_score(
     *,
     fallback: float,
 ) -> float:
-    matches = sum(
-        any(token in reason.upper() for token in tokens)
-        for reason in reasons
-    )
+    matches = sum(any(token in reason.upper() for token in tokens) for reason in reasons)
     return min(1.0, max(fallback, matches / 3.0))
 
 
@@ -5317,14 +4429,8 @@ def _max_selected_correlation(
     return max(values, default=0.0)
 
 
-def _volatility_from_matrix(
-    ticker: str, correlation: pd.DataFrame
-) -> float:
-    return float(
-        correlation.attrs.get("annualized_volatility", {}).get(
-            ticker, 0.25
-        )
-    )
+def _volatility_from_matrix(ticker: str, correlation: pd.DataFrame) -> float:
+    return float(correlation.attrs.get("annualized_volatility", {}).get(ticker, 0.25))
 
 
 def _portfolio_volatility(
@@ -5333,26 +4439,16 @@ def _portfolio_volatility(
 ) -> float | None:
     if not allocations or correlation.empty:
         return None
-    tickers = [
-        row["ticker"]
-        for row in allocations
-        if row["ticker"] in correlation.index
-    ]
+    tickers = [row["ticker"] for row in allocations if row["ticker"] in correlation.index]
     if not tickers:
         return None
     weights = np.array(
         [
-            next(
-                float(row["target_weight"])
-                for row in allocations
-                if row["ticker"] == ticker
-            )
+            next(float(row["target_weight"]) for row in allocations if row["ticker"] == ticker)
             for ticker in tickers
         ]
     )
-    vols = np.array(
-        [_volatility_from_matrix(ticker, correlation) for ticker in tickers]
-    )
+    vols = np.array([_volatility_from_matrix(ticker, correlation) for ticker in tickers])
     corr = correlation.loc[tickers, tickers].fillna(0).to_numpy()
     covariance = np.outer(vols, vols) * corr
     variance = float(weights.T @ covariance @ weights)
@@ -5365,10 +4461,7 @@ def _capital_level(project_root: Path) -> int:
 
 
 def _target_throttle(daily_target: dict[str, Any]) -> bool:
-    return bool(
-        daily_target.get("target_reached")
-        and daily_target.get("enforcement_active")
-    )
+    return bool(daily_target.get("target_reached") and daily_target.get("enforcement_active"))
 
 
 def _research_blockers(row: dict[str, Any]) -> list[str]:
@@ -5488,22 +4581,15 @@ def _publish(
         "opportunity-funnel.json": report["opportunity_funnel"],
         "coverage-waterfall.json": report["coverage_waterfall"],
         "vectorized-stage0.json": report["vectorized_stage0"],
-        "cross-asset-intelligence.json": report[
-            "cross_asset_intelligence"
-        ],
-        "performance-attribution.json": report[
-            "performance_attribution"
-        ],
-        "normalized-opportunities.json": report[
-            "normalized_opportunities"
-        ],
+        "cross-asset-intelligence.json": report["cross_asset_intelligence"],
+        "performance-attribution.json": report["performance_attribution"],
+        "normalized-opportunities.json": report["normalized_opportunities"],
         "overlap-report.json": report["overlap"],
-        "desired-portfolio-targets.json": report[
-            "desired_targets"
-        ],
+        "desired-portfolio-targets.json": report["desired_targets"],
         "sizing-audit.json": report["sizing_audit"],
         "lifecycle-audit.json": report["lifecycle_audit"],
         "active_portfolio_plan.json": report,
+        "rl-portfolio-rotation.json": report["rl_portfolio_rotation"],
     }
     for name, payload in artifacts.items():
         _write_json(output / name, payload)
@@ -5566,9 +4652,7 @@ def _timestamp(value: Any) -> datetime | None:
     if value in (None, ""):
         return None
     try:
-        result = datetime.fromisoformat(
-            str(value).replace("Z", "+00:00")
-        )
+        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
     if result.tzinfo is None:
@@ -5623,9 +4707,7 @@ def _ratio(numerator: Decimal, denominator: Decimal) -> float:
     return round(float(numerator / denominator), 10)
 
 
-def _bounded(
-    value: Any, *, default: float = 0.0
-) -> float:
+def _bounded(value: Any, *, default: float = 0.0) -> float:
     number = _number(value)
     if number == 0 and value in (None, ""):
         number = default
@@ -5633,8 +4715,4 @@ def _bounded(
 
 
 def _rounded_map(values: dict[str, float]) -> dict[str, float]:
-    return {
-        key: round(value, 8)
-        for key, value in sorted(values.items())
-        if value > 0
-    }
+    return {key: round(value, 8) for key, value in sorted(values.items()) if value > 0}

@@ -26,6 +26,9 @@ from stocks.research.phase11_9 import (
     _parameters,
     _signals,
 )
+from stocks.signals.timeframe_contracts import (
+    declared_research_signal_timeframe_contract,
+)
 
 
 SCHEMA = "phase11_12_bulk_strategy_dna_v1"
@@ -504,6 +507,9 @@ def phase11_12_observe(
         formula = str(candidate["formula"])
         profile = str(candidate["profile"])
         asset_class = str(candidate["asset_class"])
+        timeframe_contract = declared_research_signal_timeframe_contract(
+            project_root, candidate
+        )
         available = frames_by_timeframe.get(timeframe, {})
         symbols = set(ASSET_BUCKETS[asset_class])
         frames = {
@@ -566,6 +572,9 @@ def phase11_12_observe(
                 "timeframe": timeframe,
                 "profile": profile,
                 "asset_class": asset_class,
+                "strategy_family": formula,
+                "strategy_timeframe_contract": timeframe_contract,
+                "model_version": "NO_ML_MODEL_DETERMINISTIC_SIGNAL_V1",
                 "symbol": symbol,
                 "forward_provider": str(
                     closed_price.attrs.get("provider", "UNKNOWN")

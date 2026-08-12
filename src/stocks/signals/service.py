@@ -6,12 +6,13 @@ import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import numpy as np
 import pandas as pd
 
 from stocks.research.autopilot.contracts import stable_hash
+from stocks.signals.active_swing import generate_active_swing_candidates
 from stocks.signals.contracts import (
     SignalAction,
     SignalLifecycle,
@@ -26,6 +27,9 @@ from stocks.signals.market_reference import (
     latest_market_reference,
 )
 from stocks.signals.storage import SignalStore
+from stocks.signals.timeframe_contracts import (
+    declared_research_signal_timeframe_contract,
+)
 from stocks.universe import broad_commodity_symbols, broad_etf_symbols
 
 
@@ -64,7 +68,9 @@ CANONICAL_SIGNAL_FAMILIES = frozenset(
     }
 )
 DEFAULT_SIGNAL_PUBLICATION_BUDGET = 5_000
+ACTIVE_SWING_SIGNAL_PATH = Path("output/signals/active_swing_15m_signals.json")
 TIMEFRAME_ALIASES = {
+    "15min": "15m",
     "60m": "1h",
     "1hour": "1h",
     "2hour": "2h",
@@ -74,6 +80,7 @@ TIMEFRAME_ALIASES = {
     "monthly": "1mo",
 }
 SIGNAL_VALIDITY = {
+    "15m": timedelta(hours=4),
     "1h": timedelta(hours=12),
     "2h": timedelta(hours=24),
     "4h": timedelta(days=3),
@@ -82,6 +89,7 @@ SIGNAL_VALIDITY = {
     "1mo": timedelta(days=62),
 }
 INTRADAY_BAR_LENGTH = {
+    "15m": timedelta(minutes=15),
     "1h": timedelta(hours=1),
     "2h": timedelta(hours=2),
     "4h": timedelta(hours=4),
@@ -143,18 +151,12 @@ def signal_scan(
         authorities = store.authorities()
         manual_ids = {row["strategy_id"] for row in authorities}
         if strategy:
-            authorities = [
-                row for row in authorities if row["strategy_id"] == strategy
-            ]
-        candidates = {
-            row["candidate_id"]: row
-            for row in _candidates(project_root)
-        }
+            authorities = [row for row in authorities if row["strategy_id"] == strategy]
+        candidates = {row["candidate_id"]: row for row in _candidates(project_root)}
         selected_candidates = [
             row
             for row in candidates.values()
-            if row.get("classification")
-            in {"FROZEN_SHADOW", "MANUAL_SIGNAL_CANDIDATE"}
+            if row.get("classification") in {"FROZEN_SHADOW", "MANUAL_SIGNAL_CANDIDATE"}
             and (strategy is None or row["candidate_id"] == strategy)
         ]
         symbols = _universe_symbols(project_root, universe)
@@ -201,15 +203,9 @@ def signal_scan(
         for payload in phase11_14_observer_plans:
             if timeframe and payload.get("timeframe") != timeframe:
                 continue
-            if (
-                float(payload.get("confidence_score", 0.0))
-                < minimum_confidence
-            ):
+            if float(payload.get("confidence_score", 0.0)) < minimum_confidence:
                 continue
-            if (
-                float(payload.get("reward_risk_1", 0.0))
-                < minimum_reward_risk
-            ):
+            if float(payload.get("reward_risk_1", 0.0)) < minimum_reward_risk:
                 continue
             if asset_class and payload.get("asset_class") != asset_class:
                 continue
@@ -228,6 +224,53 @@ def signal_scan(
             )
             store.append_signal(payload)
             plans.append(payload)
+        active_swing_15m = generate_active_swing_candidates(
+            project_root,
+            symbols,
+            observed_at=now,
+        )
+        active_swing_rows: list[dict[str, Any]] = []
+        for payload in active_swing_15m.get("signals", []):
+            if timeframe and payload.get("timeframe") != timeframe:
+                continue
+            if strategy and payload.get("strategy_id") != strategy:
+                continue
+            if float(payload.get("confidence_score", 0.0)) < minimum_confidence:
+                continue
+            if float(payload.get("reward_risk_1", 0.0)) < minimum_reward_risk:
+                continue
+            contract = _contract(project_root, str(payload["ticker"]))
+            payload["contract_identity"] = contract
+            payload["asset_class"] = str(contract.get("security_type") or "STK")
+            payload["currency"] = str(contract.get("currency") or "USD")
+            payload["exchange"] = str(
+                contract.get("primary_exchange") or contract.get("exchange") or "UNRESOLVED"
+            )
+            if not contract:
+                payload["risks"] = [
+                    *payload.get("risks", []),
+                    "CONTRACT_IDENTITY_UNAVAILABLE",
+                ]
+            if asset_class and payload.get("asset_class") != asset_class:
+                continue
+            symbol = str(payload["ticker"])
+            if symbol not in market_references:
+                market_references[symbol] = latest_market_reference(
+                    project_root,
+                    symbol,
+                    now=now,
+                )
+            payload = apply_market_reference(
+                project_root,
+                payload,
+                now=now,
+                reference=market_references[symbol],
+            )
+            active_swing_rows.append(payload)
+    _publish_active_swing_outputs(
+        project_root,
+        {**active_swing_15m, "signals": active_swing_rows},
+    )
     plans.sort(
         key=lambda row: (
             -float(row.get("confidence_score", 0)),
@@ -236,13 +279,9 @@ def signal_scan(
         )
     )
     plans = _promote_consensus(plans)
-    invalidated_signal_count = sum(
-        row.get("lifecycle_status") == "INVALIDATED" for row in plans
-    )
+    invalidated_signal_count = sum(row.get("lifecycle_status") == "INVALIDATED" for row in plans)
     active_signal_assets = {
-        str(row.get("ticker"))
-        for row in plans
-        if row.get("data_freshness") == "FRESH"
+        str(row.get("ticker")) for row in plans if row.get("data_freshness") == "FRESH"
     }
     plans = _fair_signal_limit(plans, max(1, maximum_signals))
     phase11_14_inventory = _phase11_14_observer_inventory(project_root)
@@ -254,43 +293,41 @@ def signal_scan(
         "generated_at": now.isoformat(),
         "universe": universe,
         "frozen_shadow_strategy_count": len(selected_candidates),
-        "phase11_14_observer_strategy_count": phase11_14_inventory[
-            "observer_strategy_count"
-        ],
-        "phase11_14_exploratory_strategy_count": phase11_14_inventory[
-            "exploratory_strategy_count"
-        ],
+        "phase11_14_observer_strategy_count": phase11_14_inventory["observer_strategy_count"],
+        "phase11_14_exploratory_strategy_count": phase11_14_inventory["exploratory_strategy_count"],
         "phase11_14_active_observer_strategy_count": len(
-            {
-                str(row.get("strategy_id"))
-                for row in phase11_14_observer_plans
-            }
+            {str(row.get("strategy_id")) for row in phase11_14_observer_plans}
         ),
         "phase11_14_active_exploratory_strategy_count": len(
             {
                 str(row.get("strategy_id"))
                 for row in phase11_14_observer_plans
-                if row.get("observer_tier")
-                == "EXPLORATORY_FORWARD_OBSERVER"
+                if row.get("observer_tier") == "EXPLORATORY_FORWARD_OBSERVER"
             }
         ),
+        "active_swing_15m_status": active_swing_15m.get("status"),
+        "active_swing_15m_hypothesis_count": int(active_swing_15m.get("hypothesis_count", 0)),
+        "active_swing_15m_candidate_count": int(active_swing_15m.get("candidate_count", 0)),
+        "active_swing_15m_native_ready_symbol_count": int(
+            active_swing_15m.get("native_15m_ready_symbol_count", 0)
+        ),
+        "active_swing_15m_candidate_unit": active_swing_15m.get("candidate_unit"),
+        "active_swing_15m_portfolio_eligible": False,
+        "active_swing_15m_canonical_money_signal": False,
+        "active_swing_15m_canonical_signal_store_appended": False,
+        "active_swing_15m_manual_execution_eligible": False,
+        "active_swing_15m_execution_authority": "NONE",
         "authorized_strategy_count": len(manual_ids),
         "followed_asset_count": len(symbols),
         "active_signal_asset_count": len(active_signal_assets),
-        "asset_without_active_signal_count": len(
-            universe_assets - active_signal_assets
-        ),
+        "asset_without_active_signal_count": len(universe_assets - active_signal_assets),
         "published_asset_count": len(published_assets),
         "published_active_asset_coverage_ratio": round(
             len(published_assets) / max(1, len(active_signal_assets)), 6
         ),
         "covered_asset_count": len(published_assets),
-        "covered_strategy_count": len(
-            {str(row.get("strategy_id")) for row in plans}
-        ),
-        "coverage_policy": (
-            "ASSET_FIRST_THEN_STRATEGY_ROUND_ROBIN"
-        ),
+        "covered_strategy_count": len({str(row.get("strategy_id")) for row in plans}),
+        "coverage_policy": ("ASSET_FIRST_THEN_STRATEGY_ROUND_ROBIN"),
         "publication_budget": maximum_signals,
         "signal_count": len(plans),
         "price_invalidated_signal_count": invalidated_signal_count,
@@ -309,6 +346,8 @@ def signal_scan(
             if manual_ids
             else "SHADOW"
             if selected_candidates
+            else "SHADOW"
+            if active_swing_15m.get("candidate_count", 0)
             else "NONE"
         ),
         "execution_authority": "NONE",
@@ -320,14 +359,79 @@ def signal_scan(
     return result
 
 
+def active_swing_scan(
+    project_root: Path,
+    *,
+    symbols: Iterable[str] | None = None,
+    observed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Refresh only natural 15m candidates without replacing money signals."""
+    now = observed_at or datetime.now(UTC)
+    selected_symbols = sorted(
+        {
+            str(symbol).strip().upper()
+            for symbol in (symbols or _universe_symbols(project_root, "all"))
+            if str(symbol).strip()
+        }
+    )
+    report = generate_active_swing_candidates(
+        project_root,
+        selected_symbols,
+        observed_at=now,
+    )
+    market_references: dict[str, dict[str, Any]] = {}
+    rows: list[dict[str, Any]] = []
+    for candidate in report.get("signals", []):
+        payload = dict(candidate)
+        symbol = str(payload["ticker"]).upper()
+        contract = _contract(project_root, symbol)
+        payload["contract_identity"] = contract
+        payload["asset_class"] = str(contract.get("security_type") or "STK")
+        payload["currency"] = str(contract.get("currency") or "USD")
+        payload["exchange"] = str(
+            contract.get("primary_exchange") or contract.get("exchange") or "UNRESOLVED"
+        )
+        if not contract:
+            payload["risks"] = [
+                *payload.get("risks", []),
+                "CONTRACT_IDENTITY_UNAVAILABLE",
+            ]
+        if symbol not in market_references:
+            market_references[symbol] = latest_market_reference(
+                project_root,
+                symbol,
+                now=now,
+            )
+        payload = apply_market_reference(
+            project_root,
+            payload,
+            now=now,
+            reference=market_references[symbol],
+        )
+        rows.append(payload)
+    result = {
+        **report,
+        "signals": rows,
+        "dedicated_fast_path": True,
+        "canonical_money_signals_replaced": False,
+        "canonical_signal_store_appended": False,
+        "manual_execution_eligible": False,
+        "portfolio_eligible": False,
+        "execution_authority": "NONE",
+        "automatic_orders": 0,
+        "broker_calls": 0,
+        "order_calls": 0,
+    }
+    _publish_active_swing_outputs(project_root, result)
+    return result
+
+
 def signal_asset(project_root: Path, symbol: str) -> dict[str, Any]:
     result = signal_scan(
         project_root,
         maximum_signals=DEFAULT_SIGNAL_PUBLICATION_BUDGET,
     )
-    matches = [
-        row for row in result["signals"] if row["ticker"].upper() == symbol.upper()
-    ]
+    matches = [row for row in result["signals"] if row["ticker"].upper() == symbol.upper()]
     return {
         **{key: value for key, value in result.items() if key != "signals"},
         "symbol": symbol.upper(),
@@ -346,8 +450,7 @@ def signal_list(project_root: Path, mode: str) -> dict[str, Any]:
         rows = [
             row
             for row in _latest_signal_versions(current_rows or rows)
-            if row["lifecycle_status"]
-            not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
+            if row["lifecycle_status"] not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
             and _signal_not_expired(row, now)
         ]
     elif mode == "expired":
@@ -362,8 +465,7 @@ def signal_list(project_root: Path, mode: str) -> dict[str, Any]:
             row
             for row in _latest_signal_versions(current_rows or rows)
             if row["action"] == "WATCHLIST"
-            and row["lifecycle_status"]
-            not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
+            and row["lifecycle_status"] not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
             and _signal_not_expired(row, now)
         ]
     return {
@@ -426,9 +528,7 @@ def signal_order_plan(
     risk_budget_eur = capital * risk
     by_risk = risk_budget_eur / unit_risk_eur
     by_cash = capital / entry_eur
-    quantity = min(by_risk, by_cash).quantize(
-        Decimal("1"), rounding=ROUND_DOWN
-    )
+    quantity = min(by_risk, by_cash).quantize(Decimal("1"), rounding=ROUND_DOWN)
     if quantity <= 0:
         return _blocked("POSITION_SIZE_BELOW_ONE_WHOLE_SHARE")
     estimated_value = quantity * entry_eur
@@ -442,26 +542,16 @@ def signal_order_plan(
         "order_type": "LIMIT",
         "limit_price": str(entry),
         "quantity": str(quantity),
-        "estimated_value_eur": str(
-            estimated_value.quantize(Decimal("0.01"))
-        ),
+        "estimated_value_eur": str(estimated_value.quantize(Decimal("0.01"))),
         "initial_stop": str(stop),
         "target_1": signal.get("take_profit_1"),
         "target_2": signal.get("take_profit_2"),
-        "maximum_planned_loss_eur": str(
-            maximum_loss.quantize(Decimal("0.01"))
-        ),
-        "risk_budget_eur": str(
-            risk_budget_eur.quantize(Decimal("0.01"))
-        ),
+        "maximum_planned_loss_eur": str(maximum_loss.quantize(Decimal("0.01"))),
+        "risk_budget_eur": str(risk_budget_eur.quantize(Decimal("0.01"))),
         "fx_to_eur": str(fx_to_eur),
-        "remaining_cash_eur": str(
-            (capital - estimated_value).quantize(Decimal("0.01"))
-        ),
+        "remaining_cash_eur": str((capital - estimated_value).quantize(Decimal("0.01"))),
         "commission_estimate": "UNAVAILABLE_USE_BROKER_SCHEDULE",
-        "sector_exposure_after_trade": (
-            "UNAVAILABLE_WITHOUT_CURRENT_PRIVATE_ACCOUNT_EQUITY"
-        ),
+        "sector_exposure_after_trade": ("UNAVAILABLE_WITHOUT_CURRENT_PRIVATE_ACCOUNT_EQUITY"),
         "manual_plan_only": True,
         "model_signal_not_guarantee": True,
         "automatic_submission": False,
@@ -570,21 +660,14 @@ def signal_status(project_root: Path) -> dict[str, Any]:
         authorities = store.authorities()
         signals = store.signals()
     frozen = [
-        row
-        for row in _candidates(project_root)
-        if row.get("classification") == "FROZEN_SHADOW"
+        row for row in _candidates(project_root) if row.get("classification") == "FROZEN_SHADOW"
     ]
-    frozen_families = {
-        str(row.get("family"))
-        for row in frozen
-        if row.get("family")
-    }
+    frozen_families = {str(row.get("family")) for row in frozen if row.get("family")}
     now = datetime.now(UTC)
     open_lifecycle = [
         row
         for row in signals
-        if row["lifecycle_status"]
-        not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
+        if row["lifecycle_status"] not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
         and _signal_not_expired(row, now)
     ]
     current_rows = _latest_scan_signals(project_root)
@@ -592,8 +675,7 @@ def signal_status(project_root: Path) -> dict[str, Any]:
     active = [
         row
         for row in latest
-        if row["lifecycle_status"]
-        not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
+        if row["lifecycle_status"] not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
         and _signal_not_expired(row, now)
     ]
     return {
@@ -603,12 +685,8 @@ def signal_status(project_root: Path) -> dict[str, Any]:
         "manual_actionable_strategies": len(authorities),
         "frozen_shadow_strategies": len(frozen),
         "frozen_candidate_family_count": len(frozen_families),
-        "canonical_signal_family_count": len(
-            CANONICAL_SIGNAL_FAMILIES
-        ),
-        "canonical_signal_families": sorted(
-            CANONICAL_SIGNAL_FAMILIES
-        ),
+        "canonical_signal_family_count": len(CANONICAL_SIGNAL_FAMILIES),
+        "canonical_signal_families": sorted(CANONICAL_SIGNAL_FAMILIES),
         "unimplemented_frozen_candidate_families": sorted(
             frozen_families - CANONICAL_SIGNAL_FAMILIES
         ),
@@ -616,13 +694,9 @@ def signal_status(project_root: Path) -> dict[str, Any]:
         "signal_history_record_count": len(signals),
         "unexpired_open_history_record_count": len(open_lifecycle),
         "superseded_unexpired_signal_count": len(open_lifecycle) - len(active),
-        "active_signal_semantics": (
-            "LATEST_UNEXPIRED_PER_TICKER_STRATEGY_TIMEFRAME"
-        ),
+        "active_signal_semantics": ("LATEST_UNEXPIRED_PER_TICKER_STRATEGY_TIMEFRAME"),
         "active_signal_source": (
-            "LATEST_SCAN_ARTIFACT"
-            if current_rows
-            else "PRIVATE_SIGNAL_HISTORY_FALLBACK"
+            "LATEST_SCAN_ARTIFACT" if current_rows else "PRIVATE_SIGNAL_HISTORY_FALLBACK"
         ),
         "SIGNALS_CAN_RUN_WITHOUT_BROKER": True,
         "SIGNALS_INCLUDE_STOP_LOSS": True,
@@ -630,18 +704,12 @@ def signal_status(project_root: Path) -> dict[str, Any]:
         "MANUAL_EXECUTION_SUPPORTED": True,
         "SIGNAL_AUTHORITY_SEPARATE_FROM_EXECUTION": True,
         "signal_authority": (
-            "MANUAL_ACTIONABLE"
-            if authorities
-            else "SHADOW"
-            if frozen
-            else "NONE"
+            "MANUAL_ACTIONABLE" if authorities else "SHADOW" if frozen else "NONE"
         ),
         "execution_authority": "NONE",
         "broker_calls": 0,
         "orders_generated": 0,
-        "private_database": str(
-            project_root / "data" / "signals" / "private" / "signals.sqlite3"
-        ),
+        "private_database": str(project_root / "data" / "signals" / "private" / "signals.sqlite3"),
     }
 
 
@@ -676,11 +744,7 @@ def _build_signal(
         low,
         params,
         open_=frame["open"].astype(float),
-        volume=(
-            frame["volume"].astype(float)
-            if "volume" in frame
-            else None
-        ),
+        volume=(frame["volume"].astype(float) if "volume" in frame else None),
     )
     if raw_action not in {SignalAction.BUY, SignalAction.STRONG_BUY}:
         return None
@@ -698,9 +762,7 @@ def _build_signal(
         timeframe,
         SIGNAL_VALIDITY["1d"],
     )
-    exchange_timezone = str(
-        last_row.get("exchange_timezone") or ""
-    ).strip()
+    exchange_timezone = str(last_row.get("exchange_timezone") or "").strip()
     freshness_evaluation = evaluate_signal_freshness(
         {
             "timeframe": timeframe,
@@ -762,16 +824,21 @@ def _build_signal(
             "timeframe": candidate["timeframe"],
         }
     )
-    signal_id = "SIG-" + stable_hash(
-        {
-            "strategy_hash": strategy_hash,
-            "ticker": symbol.upper(),
-            "data_timestamp": data_time.isoformat(),
-            "action": action.value,
-        }
-    )[:24]
+    signal_id = (
+        "SIG-"
+        + stable_hash(
+            {
+                "strategy_hash": strategy_hash,
+                "ticker": symbol.upper(),
+                "data_timestamp": data_time.isoformat(),
+                "action": action.value,
+            }
+        )[:24]
+    )
+
     def q(value: float) -> Decimal:
         return Decimal(str(value)).quantize(Decimal("0.0001"))
+
     return SignalPlan(
         signal_id=signal_id,
         asset=symbol.upper(),
@@ -784,7 +851,14 @@ def _build_signal(
         data_timestamp=data_time,
         data_freshness=freshness,
         strategy_id=candidate["candidate_id"],
+        strategy_family=str(
+            candidate.get("family") or candidate.get("strategy_name") or "UNDECLARED"
+        ),
         strategy_dna_hash=strategy_hash,
+        strategy_timeframe_contract=declared_research_signal_timeframe_contract(
+            project_root,
+            candidate,
+        ),
         timeframe=timeframe,
         higher_timeframe_context=f"CLOSED_{timeframe.upper()}_BAR",
         action=action,
@@ -822,9 +896,7 @@ def _build_signal(
         bar_origin=str(last_row.get("bar_origin") or "LEGACY_DAILY_CACHE"),
         bar_closed=True,
         exchange_timezone=exchange_timezone,
-        signal_freshness_basis=str(
-            freshness_evaluation["freshness_basis"]
-        ),
+        signal_freshness_basis=str(freshness_evaluation["freshness_basis"]),
     )
 
 
@@ -845,6 +917,7 @@ def _signal_bar_path(
         / f"interval={timeframe}"
     )
     preferred_sources = {
+        "15m": ("15m",),
         "1h": ("1h",),
         "2h": ("2h", "1h"),
         "4h": ("4h", "1h"),
@@ -861,9 +934,7 @@ def _signal_bar_path(
         return candidates[0]
     if timeframe == "1d":
         legacy = (
-            project_root
-            / "data/research/critical_trading/yfinance"
-            / f"{symbol.upper()}.parquet"
+            project_root / "data/research/critical_trading/yfinance" / f"{symbol.upper()}.parquet"
         )
         if legacy.exists():
             return legacy
@@ -946,6 +1017,7 @@ def _bar_available_at(row: pd.Series, timeframe: str) -> datetime:
 
 def _holding_period(timeframe: str) -> str:
     return {
+        "15m": "1-20 sessions; tactical trigger expires within 4 hours",
         "1h": "2-20 closed 1h bars",
         "2h": "2-20 closed 2h bars",
         "4h": "2-20 closed 4h bars",
@@ -970,9 +1042,7 @@ def _latest_signal_versions(
             _normalize_timeframe(row.get("timeframe")),
         )
         prior = latest.get(key)
-        if prior is None or _signal_version_timestamp(row) > _signal_version_timestamp(
-            prior
-        ):
+        if prior is None or _signal_version_timestamp(row) > _signal_version_timestamp(prior):
             latest[key] = row
     return sorted(
         latest.values(),
@@ -1019,20 +1089,11 @@ def _strategy_signal(
     close = close.astype(float)
     high = high.astype(float)
     low = low.astype(float)
-    open_series = (
-        open_.astype(float)
-        if open_ is not None
-        else close.shift(1).fillna(close)
-    )
+    open_series = open_.astype(float) if open_ is not None else close.shift(1).fillna(close)
     volume_series = (
-        volume.astype(float)
-        if volume is not None
-        else pd.Series(0.0, index=close.index)
+        volume.astype(float) if volume is not None else pd.Series(0.0, index=close.index)
     )
-    if (
-        family == "time_series_momentum"
-        and params.get("signal_variant") == "donchian_breakout"
-    ):
+    if family == "time_series_momentum" and params.get("signal_variant") == "donchian_breakout":
         channel = int(params.get("channel", 20))
         if len(close) <= channel:
             return (
@@ -1051,9 +1112,7 @@ def _strategy_signal(
         )
         return (
             SignalAction.BUY if breakout else SignalAction.NO_SIGNAL,
-            min(0.90, 0.68 + strength * 5.0)
-            if breakout
-            else 0.0,
+            min(0.90, 0.68 + strength * 5.0) if breakout else 0.0,
             [
                 "CLOSE_ABOVE_PRIOR_20_BAR_CHANNEL_HIGH",
                 "CLOSED_WEEKLY_BAR",
@@ -1075,19 +1134,12 @@ def _strategy_signal(
     minimum = max(slow + 2, channel + 2, 30)
     if len(close) < minimum:
         return SignalAction.NO_SIGNAL, 0.0, ["INSUFFICIENT_HISTORY"]
-    ema_fast = close.ewm(
-        span=fast, adjust=False, min_periods=fast
-    ).mean()
-    ema_slow = close.ewm(
-        span=slow, adjust=False, min_periods=slow
-    ).mean()
-    trend = (
-        float(close.iloc[-1]) > float(ema_slow.iloc[-1])
-        and float(ema_fast.iloc[-1]) > float(ema_slow.iloc[-1])
+    ema_fast = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
+    ema_slow = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
+    trend = float(close.iloc[-1]) > float(ema_slow.iloc[-1]) and float(ema_fast.iloc[-1]) > float(
+        ema_slow.iloc[-1]
     )
-    prior_high = float(
-        high.iloc[-channel - 1 : -1].max()
-    )
+    prior_high = float(high.iloc[-channel - 1 : -1].max())
     atr_series = _atr_series(high, low, close, 14)
     atr_now = float(atr_series.iloc[-1])
     roc_period = min(max(4, channel), len(close) - 1)
@@ -1096,8 +1148,7 @@ def _strategy_signal(
         0.0,
         min(
             1.0,
-            float(ema_fast.iloc[-1] / ema_slow.iloc[-1] - 1.0)
-            * 10.0,
+            float(ema_fast.iloc[-1] / ema_slow.iloc[-1] - 1.0) * 10.0,
         ),
     )
 
@@ -1119,9 +1170,7 @@ def _strategy_signal(
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
             0.60 + 0.30 * strength if active else 0.0,
-            ["FAST_MA_ABOVE_SLOW_MA", "CLOSE_ABOVE_SLOW_MA"]
-            if active
-            else [],
+            ["FAST_MA_ABOVE_SLOW_MA", "CLOSE_ABOVE_SLOW_MA"] if active else [],
         )
     if family == "triple_ma_trend":
         middle = max(fast + 1, (fast + slow) // 2)
@@ -1130,20 +1179,13 @@ def _strategy_signal(
             adjust=False,
             min_periods=middle,
         ).mean()
-        active = (
-            trend
-            and float(ema_fast.iloc[-1])
-            > float(ema_middle.iloc[-1])
-            > float(ema_slow.iloc[-1])
+        active = trend and float(ema_fast.iloc[-1]) > float(ema_middle.iloc[-1]) > float(
+            ema_slow.iloc[-1]
         )
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.64 + 0.25 * trend_strength)
-            if active
-            else 0.0,
-            ["TRIPLE_EMA_ALIGNMENT", "CLOSE_ABOVE_SLOW_EMA"]
-            if active
-            else [],
+            min(0.90, 0.64 + 0.25 * trend_strength) if active else 0.0,
+            ["TRIPLE_EMA_ALIGNMENT", "CLOSE_ABOVE_SLOW_EMA"] if active else [],
         )
     if family == "macd_trend":
         macd = ema_fast - ema_slow
@@ -1153,18 +1195,12 @@ def _strategy_signal(
             min_periods=9,
         ).mean()
         active = (
-            trend
-            and float(macd.iloc[-1]) > float(signal.iloc[-1])
-            and float(macd.iloc[-1]) > 0
+            trend and float(macd.iloc[-1]) > float(signal.iloc[-1]) and float(macd.iloc[-1]) > 0
         )
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.65 + 0.20 * trend_strength)
-            if active
-            else 0.0,
-            ["MACD_ABOVE_SIGNAL", "MACD_POSITIVE", "TREND_FILTER"]
-            if active
-            else [],
+            min(0.90, 0.65 + 0.20 * trend_strength) if active else 0.0,
+            ["MACD_ABOVE_SIGNAL", "MACD_POSITIVE", "TREND_FILTER"] if active else [],
         )
     if family == "bollinger_breakout":
         period = min(
@@ -1181,14 +1217,9 @@ def _strategy_signal(
             ["CLOSE_ABOVE_BOLLINGER_BREAKOUT_LEVEL"] if breakout else [],
         )
     if family in {"donchian_breakout", "atr_breakout"}:
-        range_confirmed = (
-            float(close.iloc[-1] - close.iloc[-2])
-            >= 0.20 * atr_now
-        )
+        range_confirmed = float(close.iloc[-1] - close.iloc[-2]) >= 0.20 * atr_now
         breakout = float(close.iloc[-1]) > prior_high
-        active = breakout and (
-            family == "donchian_breakout" or range_confirmed
-        )
+        active = breakout and (family == "donchian_breakout" or range_confirmed)
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
             min(
@@ -1203,11 +1234,7 @@ def _strategy_signal(
             else 0.0,
             [
                 "CLOSE_ABOVE_PRIOR_CHANNEL_HIGH",
-                (
-                    "ATR_EXPANSION_CONFIRMED"
-                    if family == "atr_breakout"
-                    else "DONCHIAN_BREAKOUT"
-                ),
+                ("ATR_EXPANSION_CONFIRMED" if family == "atr_breakout" else "DONCHIAN_BREAKOUT"),
             ]
             if active
             else [],
@@ -1222,12 +1249,8 @@ def _strategy_signal(
         active = trend and float(close.iloc[-1]) > float(upper.iloc[-1])
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.68 + 0.20 * trend_strength)
-            if active
-            else 0.0,
-            ["CLOSE_ABOVE_KELTNER_CHANNEL", "TREND_FILTER"]
-            if active
-            else [],
+            min(0.90, 0.68 + 0.20 * trend_strength) if active else 0.0,
+            ["CLOSE_ABOVE_KELTNER_CHANNEL", "TREND_FILTER"] if active else [],
         )
     if family in {
         "trend_consensus",
@@ -1237,17 +1260,14 @@ def _strategy_signal(
         votes = [
             trend,
             roc > roc_threshold,
-            float(adx.iloc[-1])
-            >= float(params.get("adx_min", 20)),
+            float(adx.iloc[-1]) >= float(params.get("adx_min", 20)),
             float(plus_di.iloc[-1]) > float(minus_di.iloc[-1]),
         ]
         required = 3 if family == "robust_trend_consensus" else 2
         active = sum(votes) >= required
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.58 + 0.075 * sum(votes))
-            if active
-            else 0.0,
+            min(0.90, 0.58 + 0.075 * sum(votes)) if active else 0.0,
             [
                 f"TREND_CONSENSUS_{sum(votes)}_OF_4",
                 "CLOSED_BAR_VOTING",
@@ -1259,12 +1279,8 @@ def _strategy_signal(
         active = trend and roc > roc_threshold
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.62 + min(0.25, max(0.0, roc)))
-            if active
-            else 0.0,
-            ["POSITIVE_RATE_OF_CHANGE", "TREND_FILTER"]
-            if active
-            else [],
+            min(0.90, 0.62 + min(0.25, max(0.0, roc))) if active else 0.0,
+            ["POSITIVE_RATE_OF_CHANGE", "TREND_FILTER"] if active else [],
         )
     if family in {
         "risk_adjusted_momentum",
@@ -1272,18 +1288,13 @@ def _strategy_signal(
         "etf_commodity_trend",
     }:
         returns = close.pct_change(fill_method=None)
-        volatility = float(
-            returns.tail(min(26, len(returns))).std(ddof=0)
-        )
+        volatility = float(returns.tail(min(26, len(returns))).std(ddof=0))
         horizons = [
             min(4, len(close) - 1),
             min(13, len(close) - 1),
             min(26, len(close) - 1),
         ]
-        momenta = [
-            float(close.iloc[-1] / close.iloc[-period] - 1.0)
-            for period in horizons
-        ]
+        momenta = [float(close.iloc[-1] / close.iloc[-period] - 1.0) for period in horizons]
         if family == "risk_adjusted_momentum":
             score = roc / max(volatility, 1e-9)
             active = trend and roc > 0 and score > 0
@@ -1301,27 +1312,20 @@ def _strategy_signal(
             ]
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.62 + min(0.25, max(0.0, score) * 0.02))
-            if active
-            else 0.0,
+            min(0.90, 0.62 + min(0.25, max(0.0, score) * 0.02)) if active else 0.0,
             reasons if active else [],
         )
     if family == "adx_trend":
         adx, plus_di, minus_di = _adx_series(high, low, close)
         active = (
             trend
-            and float(adx.iloc[-1])
-            >= float(params.get("adx_min", 20))
+            and float(adx.iloc[-1]) >= float(params.get("adx_min", 20))
             and float(plus_di.iloc[-1]) > float(minus_di.iloc[-1])
         )
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.62 + float(adx.iloc[-1]) / 200.0)
-            if active
-            else 0.0,
-            ["ADX_TREND_STRENGTH", "POSITIVE_DIRECTIONAL_MOVEMENT"]
-            if active
-            else [],
+            min(0.90, 0.62 + float(adx.iloc[-1]) / 200.0) if active else 0.0,
+            ["ADX_TREND_STRENGTH", "POSITIVE_DIRECTIONAL_MOVEMENT"] if active else [],
         )
     if family in {
         "ema_pullback",
@@ -1333,12 +1337,8 @@ def _strategy_signal(
         rsi14 = _rsi_series(close, 14)
         lowest = low.rolling(14, min_periods=14).min()
         highest = high.rolling(14, min_periods=14).max()
-        stochastic = (
-            100.0 * (close - lowest) / (highest - lowest).replace(0, np.nan)
-        )
-        distance = abs(
-            float(close.iloc[-1] / ema_fast.iloc[-1] - 1.0)
-        )
+        stochastic = 100.0 * (close - lowest) / (highest - lowest).replace(0, np.nan)
+        distance = abs(float(close.iloc[-1] / ema_fast.iloc[-1] - 1.0))
         rebound = float(close.iloc[-1]) > float(open_series.iloc[-1])
         if family == "ema_pullback":
             active = trend and distance <= 0.03 and rebound
@@ -1347,25 +1347,21 @@ def _strategy_signal(
             active = (
                 trend
                 and float(stochastic.iloc[-1]) <= 35.0
-                and float(stochastic.iloc[-1])
-                > float(stochastic.iloc[-2])
+                and float(stochastic.iloc[-1]) > float(stochastic.iloc[-2])
             )
             reasons = ["STOCHASTIC_PULLBACK_TURN", "TREND_FILTER"]
         elif family == "rsi2_adx_pullback":
             adx, _, _ = _adx_series(high, low, close)
             active = (
                 trend
-                and float(rsi2.iloc[-1])
-                <= float(params.get("rsi_low", 15))
-                and float(adx.iloc[-1])
-                >= float(params.get("adx_min", 18))
+                and float(rsi2.iloc[-1]) <= float(params.get("rsi_low", 15))
+                and float(adx.iloc[-1]) >= float(params.get("adx_min", 18))
             )
             reasons = ["RSI2_OVERSOLD", "ADX_TREND_FILTER"]
         else:
             votes = [
                 distance <= 0.04,
-                float(rsi14.iloc[-1])
-                <= float(params.get("rsi14_low", 42)),
+                float(rsi14.iloc[-1]) <= float(params.get("rsi14_low", 42)),
                 float(stochastic.iloc[-1]) <= 35.0,
                 rebound,
             ]
@@ -1397,38 +1393,25 @@ def _strategy_signal(
         "channel_consensus",
     }:
         current_range = float(high.iloc[-1] - low.iloc[-1])
-        median_range = float(
-            (high - low).iloc[-21:-1].median()
-        )
-        relative_volume = (
-            float(volume_series.iloc[-1])
-            / max(
-                float(volume_series.iloc[-21:-1].median()),
-                1.0,
-            )
+        median_range = float((high - low).iloc[-21:-1].median())
+        relative_volume = float(volume_series.iloc[-1]) / max(
+            float(volume_series.iloc[-21:-1].median()),
+            1.0,
         )
         returns = close.pct_change(fill_method=None)
         short_vol = returns.rolling(5, min_periods=5).std()
         long_vol = returns.rolling(20, min_periods=20).std()
-        prior_contraction = float(
-            short_vol.iloc[-2] / max(long_vol.iloc[-2], 1e-9)
-        )
+        prior_contraction = float(short_vol.iloc[-2] / max(long_vol.iloc[-2], 1e-9))
         donchian = float(close.iloc[-1]) > prior_high
         range_expansion = current_range > max(
             median_range * 1.25,
             atr_now * 0.9,
         )
-        volume_confirmed = relative_volume >= float(
-            params.get("volume_mult", 1.25)
-        )
-        contraction = prior_contraction <= float(
-            params.get("volatility_ratio", 0.75)
-        )
+        volume_confirmed = relative_volume >= float(params.get("volume_mult", 1.25))
+        contraction = prior_contraction <= float(params.get("volatility_ratio", 0.75))
         bollinger_window = close.tail(max(20, channel))
         bollinger_upper = float(
-            bollinger_window.mean()
-            + float(params.get("sigma", 2.0))
-            * bollinger_window.std(ddof=0)
+            bollinger_window.mean() + float(params.get("sigma", 2.0)) * bollinger_window.std(ddof=0)
         )
         bollinger = float(close.iloc[-1]) > bollinger_upper
         if family == "range_expansion_breakout":
@@ -1449,9 +1432,7 @@ def _strategy_signal(
             ]
             required = 2
         else:
-            keltner_upper = float(
-                ema_slow.iloc[-1] + atr_multiple * atr_now
-            )
+            keltner_upper = float(ema_slow.iloc[-1] + atr_multiple * atr_now)
             votes = [
                 donchian,
                 bollinger,
@@ -1461,9 +1442,7 @@ def _strategy_signal(
         active = sum(votes) >= required
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
-            min(0.90, 0.60 + 0.075 * sum(votes))
-            if active
-            else 0.0,
+            min(0.90, 0.60 + 0.075 * sum(votes)) if active else 0.0,
             [
                 f"{family.upper()}_{sum(votes)}_OF_{len(votes)}",
                 "CLOSED_BAR_BREAKOUT_CONFIRMATION",
@@ -1486,9 +1465,7 @@ def _strategy_signal(
         return (
             SignalAction.BUY if active else SignalAction.NO_SIGNAL,
             min(0.90, 0.62 + max(0.0, momentum)),
-            ["POSITIVE_ABSOLUTE_MOMENTUM", "CLOSE_ABOVE_TREND_FILTER"]
-            if active
-            else [],
+            ["POSITIVE_ABSOLUTE_MOMENTUM", "CLOSE_ABOVE_TREND_FILTER"] if active else [],
         )
     return SignalAction.NO_SIGNAL, 0.0, ["FAMILY_SIGNAL_NOT_IMPLEMENTED"]
 
@@ -1517,16 +1494,24 @@ def _atr_series(
 
 def _rsi_series(close: pd.Series, period: int) -> pd.Series:
     change = close.diff()
-    gain = change.clip(lower=0.0).ewm(
-        alpha=1.0 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-    loss = (-change.clip(upper=0.0)).ewm(
-        alpha=1.0 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
+    gain = (
+        change.clip(lower=0.0)
+        .ewm(
+            alpha=1.0 / period,
+            adjust=False,
+            min_periods=period,
+        )
+        .mean()
+    )
+    loss = (
+        (-change.clip(upper=0.0))
+        .ewm(
+            alpha=1.0 / period,
+            adjust=False,
+            min_periods=period,
+        )
+        .mean()
+    )
     relative = gain / loss.replace(0.0, np.nan)
     result = 100.0 - 100.0 / (1.0 + relative)
     result = result.mask((loss == 0) & (gain > 0), 100.0)
@@ -1592,11 +1577,7 @@ def _atr(frame: pd.DataFrame, period: int) -> float:
 
 def _candidate(project_root: Path, strategy_id: str) -> dict[str, Any] | None:
     return next(
-        (
-            row
-            for row in _candidates(project_root)
-            if row.get("candidate_id") == strategy_id
-        ),
+        (row for row in _candidates(project_root) if row.get("candidate_id") == strategy_id),
         None,
     )
 
@@ -1606,13 +1587,7 @@ def _phase11_14_observer_signals(
     *,
     now: datetime,
 ) -> list[dict[str, Any]]:
-    path = (
-        project_root
-        / "output"
-        / "research"
-        / "phase11_14"
-        / "latest-forward-observation.json"
-    )
+    path = project_root / "output" / "research" / "phase11_14" / "latest-forward-observation.json"
     try:
         observation = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -1637,18 +1612,10 @@ def _phase11_14_observer_signals(
             timeframe,
             SIGNAL_VALIDITY["1d"],
         )
-        observer_tier = str(
-            candidate.get("observer_tier")
-            or "ROBUST_FORWARD_OBSERVER"
-        )
-        portfolio_eligible = bool(
-            candidate.get("portfolio_eligible", False)
-        )
+        observer_tier = str(candidate.get("observer_tier") or "ROBUST_FORWARD_OBSERVER")
+        portfolio_eligible = bool(candidate.get("portfolio_eligible", False))
         for raw in candidate.get("raw_active_signals", []):
-            if (
-                raw.get("execution_envelope_status") != "GO"
-                or str(raw.get("action")) != "BUY"
-            ):
+            if raw.get("execution_envelope_status") != "GO" or str(raw.get("action")) != "BUY":
                 continue
             symbol = str(raw.get("symbol") or "").upper()
             exchange_timezone = _signal_exchange_timezone(
@@ -1667,9 +1634,7 @@ def _phase11_14_observer_signals(
             )
             if not freshness_evaluation["is_current"]:
                 continue
-            expiration = freshness_evaluation[
-                "effective_expiration"
-            ]
+            expiration = freshness_evaluation["effective_expiration"]
             entry = _positive_decimal(raw.get("entry_reference"))
             stop = _positive_decimal(raw.get("stop_loss"))
             target_1 = _positive_decimal(raw.get("take_profit_1"))
@@ -1688,9 +1653,7 @@ def _phase11_14_observer_signals(
             contract = _contract(project_root, symbol)
             currency = str(contract.get("currency") or "USD")
             exchange = str(
-                contract.get("primary_exchange")
-                or contract.get("exchange")
-                or "UNRESOLVED"
+                contract.get("primary_exchange") or contract.get("exchange") or "UNRESOLVED"
             )
             confidence_cap = (
                 Decimal("0.55")
@@ -1715,15 +1678,18 @@ def _phase11_14_observer_signals(
             if not contract:
                 risks.append("CONTRACT_IDENTITY_UNAVAILABLE")
             strategy_id = str(candidate.get("strategy_id") or "")
-            signal_id = "SIG-P1114-" + stable_hash(
-                {
-                    "qualification_hash": qualification_hash,
-                    "strategy_id": strategy_id,
-                    "symbol": symbol,
-                    "closed_bar_timestamp": closed_at.isoformat(),
-                    "observer_tier": observer_tier,
-                }
-            )[:24]
+            signal_id = (
+                "SIG-P1114-"
+                + stable_hash(
+                    {
+                        "qualification_hash": qualification_hash,
+                        "strategy_id": strategy_id,
+                        "symbol": symbol,
+                        "closed_bar_timestamp": closed_at.isoformat(),
+                        "observer_tier": observer_tier,
+                    }
+                )[:24]
+            )
             plans.append(
                 {
                     "signal_id": signal_id,
@@ -1731,9 +1697,7 @@ def _phase11_14_observer_signals(
                     "ticker": symbol,
                     "contract_identity": contract,
                     "asset_class": str(
-                        candidate.get("asset_class")
-                        or contract.get("security_type")
-                        or "STK"
+                        candidate.get("asset_class") or contract.get("security_type") or "STK"
                     ),
                     "exchange": exchange,
                     "currency": currency,
@@ -1741,24 +1705,25 @@ def _phase11_14_observer_signals(
                     "data_timestamp": closed_at,
                     "data_freshness": "FRESH",
                     "exchange_timezone": exchange_timezone,
-                    "signal_freshness_basis": freshness_evaluation[
-                        "freshness_basis"
-                    ],
+                    "signal_freshness_basis": freshness_evaluation["freshness_basis"],
                     "signal_freshness": {
-                        key: (
-                            value.isoformat()
-                            if isinstance(value, datetime)
-                            else value
-                        )
+                        key: (value.isoformat() if isinstance(value, datetime) else value)
                         for key, value in freshness_evaluation.items()
                         if key != "is_current"
                     },
                     "strategy_id": strategy_id,
-                    "strategy_dna_hash": qualification_hash,
-                    "timeframe": timeframe,
-                    "higher_timeframe_context": (
-                        f"CLOSED_{timeframe.upper()}_BAR_PHASE11_14"
+                    "strategy_family": str(
+                        candidate.get("family") or candidate.get("formula") or "UNDECLARED"
                     ),
+                    "strategy_dna_hash": qualification_hash,
+                    "strategy_timeframe_contract": (
+                        declared_research_signal_timeframe_contract(
+                            project_root,
+                            candidate,
+                        )
+                    ),
+                    "timeframe": timeframe,
+                    "higher_timeframe_context": (f"CLOSED_{timeframe.upper()}_BAR_PHASE11_14"),
                     "action": "WATCHLIST",
                     "current_market_price": entry,
                     "preferred_entry": entry,
@@ -1767,17 +1732,13 @@ def _phase11_14_observer_signals(
                     "limit_entry_price": entry,
                     "invalidation_level": stop,
                     "stop_loss": stop,
-                    "stop_method": str(
-                        raw.get("stop_policy")
-                        or "ATR_ADJUSTED_STRUCTURE"
-                    ),
+                    "stop_method": str(raw.get("stop_policy") or "ATR_ADJUSTED_STRUCTURE"),
                     "stop_distance_pct": risk / entry,
                     "stop_distance_atr": Decimal("2.0"),
                     "take_profit_1": target_1,
                     "take_profit_2": target_2,
                     "take_profit_mode": str(
-                        raw.get("exit_policy")
-                        or "PRIMARY_TARGET_WITH_TRAILING_EXIT"
+                        raw.get("exit_policy") or "PRIMARY_TARGET_WITH_TRAILING_EXIT"
                     ),
                     "reward_risk_1": reward_risk_1,
                     "reward_risk_2": reward_risk_2,
@@ -1816,13 +1777,7 @@ def _phase11_14_observer_signals(
 def _phase11_14_observer_inventory(
     project_root: Path,
 ) -> dict[str, int]:
-    path = (
-        project_root
-        / "output"
-        / "research"
-        / "phase11_14"
-        / "latest-forward-observation.json"
-    )
+    path = project_root / "output" / "research" / "phase11_14" / "latest-forward-observation.json"
     try:
         observation = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -1836,15 +1791,12 @@ def _phase11_14_observer_inventory(
         if row.get("observation_status") == "OBSERVATION_COMPLETE"
     ]
     return {
-        "observer_strategy_count": len(
-            {str(row.get("strategy_id")) for row in rows}
-        ),
+        "observer_strategy_count": len({str(row.get("strategy_id")) for row in rows}),
         "exploratory_strategy_count": len(
             {
                 str(row.get("strategy_id"))
                 for row in rows
-                if row.get("observer_tier")
-                == "EXPLORATORY_FORWARD_OBSERVER"
+                if row.get("observer_tier") == "EXPLORATORY_FORWARD_OBSERVER"
             }
         ),
     }
@@ -1877,11 +1829,7 @@ def _candidates(project_root: Path) -> list[dict[str, Any]]:
     if dynamic.exists():
         rows.extend(json.loads(dynamic.read_text(encoding="utf-8")).get("strategies", []))
     hmm_registry = (
-        project_root
-        / "output"
-        / "research"
-        / "phase11_11"
-        / "frozen-shadow-registry.json"
+        project_root / "output" / "research" / "phase11_11" / "frozen-shadow-registry.json"
     )
     if hmm_registry.exists():
         rows.extend(
@@ -1922,21 +1870,13 @@ def _contract(project_root: Path, symbol: str) -> dict[str, Any]:
     if not path.exists():
         return {}
     frame = pd.read_parquet(path)
-    matches = frame[
-        frame["symbol"].astype(str).str.upper().eq(symbol.upper())
-    ]
+    matches = frame[frame["symbol"].astype(str).str.upper().eq(symbol.upper())]
     if len(matches) != 1:
         return {}
     row = matches.iloc[0].to_dict()
-    resolved_at = pd.to_datetime(
-        row.get("resolved_at"), utc=True, errors="coerce"
-    )
+    resolved_at = pd.to_datetime(row.get("resolved_at"), utc=True, errors="coerce")
     now = pd.Timestamp(datetime.now(UTC))
-    if (
-        pd.isna(resolved_at)
-        or resolved_at > now
-        or now - resolved_at >= pd.Timedelta(days=7)
-    ):
+    if pd.isna(resolved_at) or resolved_at > now or now - resolved_at >= pd.Timedelta(days=7):
         return {}
     allowed = {
         "con_id",
@@ -1960,9 +1900,7 @@ def _contract(project_root: Path, symbol: str) -> dict[str, Any]:
     identity.update(
         {
             "resolved_at": resolved_at.isoformat(),
-            "cache_expires_at": (
-                resolved_at + pd.Timedelta(days=7)
-            ).isoformat(),
+            "cache_expires_at": (resolved_at + pd.Timedelta(days=7)).isoformat(),
             "cache_status": "FRESH",
             "contract_source": "PHASE2_EXACT_STK_CACHE",
         }
@@ -2008,9 +1946,7 @@ def _promote_consensus(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return plans
 
 
-def _fair_signal_limit(
-    plans: list[dict[str, Any]], maximum: int
-) -> list[dict[str, Any]]:
+def _fair_signal_limit(plans: list[dict[str, Any]], maximum: int) -> list[dict[str, Any]]:
     if len(plans) <= maximum:
         return plans
     selected: list[dict[str, Any]] = []
@@ -2066,17 +2002,9 @@ def _publish_signal_outputs(
     )
     pd.DataFrame(rows).to_csv(root / "latest_signals.csv", index=False)
     parquet_rows = [
-        {
-            key: (
-                _parquet_safe_value(value)
-            )
-            for key, value in row.items()
-        }
-        for row in rows
+        {key: (_parquet_safe_value(value)) for key, value in row.items()} for row in rows
     ]
-    pd.DataFrame(parquet_rows).to_parquet(
-        root / "signal_history.parquet", index=False
-    )
+    pd.DataFrame(parquet_rows).to_parquet(root / "signal_history.parquet", index=False)
     columns = [
         "ticker",
         "action",
@@ -2092,9 +2020,7 @@ def _publish_signal_outputs(
         "lifecycle_status",
     ]
     body = "\n".join(
-        "<tr>"
-        + "".join(f"<td>{row.get(column, '')}</td>" for column in columns)
-        + "</tr>"
+        "<tr>" + "".join(f"<td>{row.get(column, '')}</td>" for column in columns) + "</tr>"
         for row in rows
     )
     (root / "latest_signals.html").write_text(
@@ -2111,12 +2037,22 @@ def _publish_signal_outputs(
     active = [
         row
         for row in rows
-        if row.get("lifecycle_status")
-        not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
+        if row.get("lifecycle_status") not in {"CLOSED", "EXPIRED", "CANCELLED", "INVALIDATED"}
     ]
     (root / "active_signals.json").write_text(
         json.dumps(active, indent=2, default=str), encoding="utf-8"
     )
+
+
+def _publish_active_swing_outputs(project_root: Path, report: dict[str, Any]) -> None:
+    path = project_root / ACTIVE_SWING_SIGNAL_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(report, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _parquet_safe_value(value: Any) -> Any:

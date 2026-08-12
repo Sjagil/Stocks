@@ -5,6 +5,7 @@ from stocks.operations.service import (
     positions_command,
 )
 from stocks.operations.launcher import launch_command
+from stocks.operations.primary_refresh import run_primary_refresh
 
 __all__ = [
     "MACHINE_MODES",
@@ -12,4 +13,5 @@ __all__ = [
     "machine_command",
     "launch_command",
     "positions_command",
+    "run_primary_refresh",
 ]

@@ -4,10 +4,22 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $ProjectRoot ".venv-ibkr\Scripts\python.exe"
 $Main = Join-Path $ProjectRoot "main.py"
+$BackgroundJobs = Join-Path $ProjectRoot "src\stocks\operations\background_jobs.py"
 
 & $Python $Main launch stop
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
+}
+
+$BackgroundStopJson = & $Python $BackgroundJobs --stop-all `
+    --project-root $ProjectRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "Detached background jobs did not stop cleanly."
+}
+$BackgroundStop = $BackgroundStopJson | ConvertFrom-Json
+if ($BackgroundStop.status -ne "GO" -or
+    $BackgroundStop.remaining_workers.Count -gt 0) {
+    throw "Detached background jobs remain after stop request."
 }
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Disable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue |
@@ -50,4 +62,6 @@ if ((Get-CanonicalRuntimeProcess).Count -gt 0) {
     runtime_status = "STOPPED"
     task_name = $TaskName
     remaining_runtime_processes = 0
+    remaining_background_workers = $BackgroundStop.remaining_workers.Count
+    background_stop_status = $BackgroundStop.status
 } | ConvertTo-Json

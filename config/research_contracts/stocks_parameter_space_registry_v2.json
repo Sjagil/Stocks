@@ -11,6 +11,11 @@
     "unknown_parameter": "UNREGISTERED_PARAMETER_VALUE_BLOCKED"
   },
   "timeframes": {
+    "15m": {
+      "status": "DEDICATED_ACTIVE_SWING_NATIVE_DATA_AND_SIGNAL_BUILDER_AVAILABLE",
+      "periods_per_year": "empirical",
+      "generic_v2_parameter_campaign_enabled": false
+    },
     "1d": {
       "status": "NATIVE_DATA_AVAILABLE",
       "periods_per_year": "empirical"
@@ -35,7 +40,7 @@
       "status": "DERIVED_FROM_CLOSED_1H_WHEN_AVAILABLE"
     }
   },
-  "forbidden_timeframes": ["1min", "5m", "15m", "30m", "tick", "ticks"],
+  "forbidden_timeframes": ["1min", "5m", "30m", "tick", "ticks"],
   "search_contract": {
     "small_space_threshold": 500,
     "preferred_methods": [
@@ -134,7 +139,7 @@
     }
   ],
   "requested_extensions": {
-    "status": "IMPLEMENTATION_BLOCKED_UNTIL_SIGNAL_BUILDERS_EXIST",
+    "status": "DEDICATED_ACTIVE_SWING_15M_SIGNAL_BUILDERS_AVAILABLE_SEPARATE_FROM_GENERIC_V2_CAMPAIGN",
     "fields": [
       "new_exit_modes",
       "new_regime_filters",

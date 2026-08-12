@@ -53,15 +53,17 @@ class EodhdAdapter:
         rows = []
         for item in payload:
             timestamp = _daily_timestamp(item.get("datetime", item.get("date")))
-            close = item.get("adjusted_close", item.get("close"))
+            raw_close = float(item.get("close"))
+            adjusted_close = float(item.get("adjusted_close", raw_close))
+            adjustment = adjusted_close / raw_close if raw_close > 0 else 1.0
             rows.append(
                 {
                     "symbol": symbol,
                     "timestamp": timestamp,
-                    "open": item.get("open", close),
-                    "high": item.get("high", close),
-                    "low": item.get("low", close),
-                    "close": close,
+                    "open": float(item.get("open", raw_close)) * adjustment,
+                    "high": float(item.get("high", raw_close)) * adjustment,
+                    "low": float(item.get("low", raw_close)) * adjustment,
+                    "close": raw_close * adjustment,
                     "volume": item.get("volume"),
                     "asset_class": asset_class,
                     "currency": currency,
@@ -283,11 +285,29 @@ class CoinMarketCapAdapter:
         items = payload.get("data", []) if isinstance(payload, Mapping) else payload
         if isinstance(items, Mapping):
             items = list(items.values())
+        flattened: list[Mapping[str, Any]] = []
+        for item in items:
+            if isinstance(item, Mapping):
+                flattened.append(item)
+            elif isinstance(item, (list, tuple)):
+                flattened.extend(
+                    nested for nested in item if isinstance(nested, Mapping)
+                )
+        selected: dict[str, Mapping[str, Any]] = {}
+        for item in flattened:
+            symbol = str(item.get("symbol", "")).upper()
+            if not symbol:
+                continue
+            incumbent = selected.get(symbol)
+            if incumbent is None or _coinmarketcap_rank(item) < _coinmarketcap_rank(
+                incumbent
+            ):
+                selected[symbol] = item
         received = _received_at(received_at)
         quote_currency = quote_currency.upper()
         rows = []
-        for item in items:
-            quote = item.get("quote", {}).get(quote_currency, {})
+        for item in selected.values():
+            quote = _coinmarketcap_quote(item, quote_currency)
             price = quote.get("price")
             timestamp = _daily_timestamp(quote.get("last_updated", item.get("last_updated", received)))
             rows.append(
@@ -307,6 +327,36 @@ class CoinMarketCapAdapter:
                 }
             )
         return clean_market_data(rows)
+
+
+def _coinmarketcap_quote(
+    item: Mapping[str, Any], quote_currency: str
+) -> Mapping[str, Any]:
+    quote = item.get("quote", {})
+    if isinstance(quote, Mapping):
+        value = quote.get(quote_currency, {})
+        return value if isinstance(value, Mapping) else {}
+    if isinstance(quote, (list, tuple)):
+        for value in quote:
+            if (
+                isinstance(value, Mapping)
+                and str(value.get("symbol", "")).upper() == quote_currency
+            ):
+                return value
+    return {}
+
+
+def _coinmarketcap_rank(item: Mapping[str, Any]) -> tuple[int, float, int]:
+    active = 0 if bool(item.get("is_active", True)) else 1
+    try:
+        rank = float(item.get("cmc_rank"))
+    except (TypeError, ValueError):
+        rank = float("inf")
+    try:
+        identifier = int(item.get("id"))
+    except (TypeError, ValueError):
+        identifier = 2**63 - 1
+    return active, rank, identifier
 
 
 def _secret(value: str) -> str:

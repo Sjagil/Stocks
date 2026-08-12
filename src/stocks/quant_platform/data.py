@@ -84,8 +84,16 @@ def clean_market_data(
     frame["asset_class"] = frame["asset_class"].map(_asset_class_value).astype("string")
     frame["currency"] = frame["currency"].astype("string").str.strip().str.upper()
     frame["source"] = frame["source"].astype("string").str.strip().str.upper()
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
-    frame["available_at"] = pd.to_datetime(frame["available_at"], utc=True, errors="coerce")
+    # SQLite and provider payloads legitimately mix ISO-8601 values with and
+    # without fractional seconds. Pandas 2 uses strict single-format inference
+    # by default, which would coerce later valid values to NaT based on the
+    # first row's precision. Parse each ISO shape explicitly as mixed.
+    frame["timestamp"] = pd.to_datetime(
+        frame["timestamp"], utc=True, errors="coerce", format="mixed"
+    )
+    frame["available_at"] = pd.to_datetime(
+        frame["available_at"], utc=True, errors="coerce", format="mixed"
+    )
     for column in ("open", "high", "low", "close", "volume", "market_cap"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 

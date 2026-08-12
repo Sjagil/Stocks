@@ -89,6 +89,62 @@ def test_level_one_requires_execution_evidence_and_exact_phrase(
     assert approved["CURRENT_CAPITAL_LEVEL"] == 1
 
 
+def test_status_returns_automatic_demotion_report_without_republishing_it(
+    tmp_path: Path,
+) -> None:
+    _policy(tmp_path)
+    phase9 = tmp_path / "output/ibkr/phase9/status.json"
+    phase9.parent.mkdir(parents=True)
+    phase9.write_text(
+        json.dumps(
+            {
+                "checks": {
+                    "fill_canary": True,
+                    "closing_sell_canary": True,
+                    "reconciliation": True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    reconciliation = (
+        tmp_path / "output/ibkr/phase9/reconciliation-audit.json"
+    )
+    reconciliation.write_text(
+        json.dumps({"reconciliation_status": "PAPER_RECONCILED_EMPTY"}),
+        encoding="utf-8",
+    )
+    promoted = capital_command(
+        tmp_path,
+        "promote",
+        level=1,
+        approval="PROMOTE CAPITAL LEVEL 1 WITH MANUAL APPROVAL",
+    )
+    assert promoted["CURRENT_CAPITAL_LEVEL"] == 1
+    phase9.write_text(
+        json.dumps(
+            {
+                "checks": {
+                    "fill_canary": False,
+                    "closing_sell_canary": False,
+                    "reconciliation": False,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    reconciliation.write_text(
+        json.dumps({"reconciliation_status": "NO_GO"}),
+        encoding="utf-8",
+    )
+
+    report = capital_command(tmp_path, "status")
+
+    assert report["CURRENT_CAPITAL_LEVEL"] == 0
+    assert report["recommendation"]["recommended_level"] == 0
+    assert report["recommendation"]["promotion_allowed"] is False
+
+
 def test_level_two_requires_verified_live_round_trips_and_sequential_promotion(
     tmp_path: Path,
     monkeypatch,
@@ -197,7 +253,7 @@ def test_level_one_rejects_open_position_as_incomplete_round_trip(
     )
 
 
-def test_operator_attested_completion_removes_duplicate_phase9_blocker(
+def test_operator_attested_completion_has_no_capital_promotion_effect(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -231,10 +287,10 @@ def test_operator_attested_completion_removes_duplicate_phase9_blocker(
 
     report = capital_command(tmp_path, "status")
 
-    assert report["recommendation"]["recommended_level"] == 1
-    assert report["recommendation"]["promotion_allowed"] is True
+    assert report["recommendation"]["recommended_level"] == 0
+    assert report["recommendation"]["promotion_allowed"] is False
     assert report["recommendation"]["recommendation_scope"] == (
-        "WHOLE_SHARE_EXECUTION_CANARY_ONLY"
+        "SIGNALS_AND_SHADOW"
     )
     assert report["recommendation"][
         "financial_finalist_required_for_level_one"
@@ -245,7 +301,7 @@ def test_operator_attested_completion_removes_duplicate_phase9_blocker(
     assert "FINANCIAL_FINALIST_NOT_PROVEN" in report[
         "recommendation"
     ]["normal_allocation_blockers"]
-    assert report["recommendation"]["evidence"]["paper_reconciliation"] is True
+    assert report["recommendation"]["evidence"]["paper_reconciliation"] is False
     assert (
         report["recommendation"]["evidence"][
             "operator_attested_manual_completion"
@@ -254,8 +310,11 @@ def test_operator_attested_completion_removes_duplicate_phase9_blocker(
     )
     assert (
         "EXECUTION_FILL_CLOSE_CANARY_NOT_PROVEN"
-        not in report["recommendation"]["blockers"]
+        in report["recommendation"]["blockers"]
     )
+    assert report["recommendation"]["evidence"][
+        "operator_attestation_effect"
+    ] == "BROKER_STATE_CONTEXT_ONLY_NO_PROMOTION_EFFECT"
 
 
 def test_risk_sizing_uses_stop_distance_and_whole_shares() -> None:

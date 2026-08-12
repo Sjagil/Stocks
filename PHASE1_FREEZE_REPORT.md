@@ -38,7 +38,7 @@ Frozen Phase 0 hashes:
 
 ```text
 ibkr_tws_probe.py       CA5B20533C1B6FBE5F0405F2DB94C0E0DD37BFEB16CF19746C613434D1F41F27
-requirements.lock.txt   15014C58FFE756EDCEF30A736F1288C851396758108BE86753E7DA3567204071
+requirements.lock.txt   AC7AAE517FED4FF220CF7C424A76874EA0577E11ADF15C553747532D73C0A162
 ```
 
 Immutable Phase 1 service hashes:
@@ -59,3 +59,10 @@ main.py                            B12F5A5E10F120350102107256ED86CA818C6DD032D93
 ```
 
 Phase 1 remains read-only. This report does not grant order authority.
+
+Dependency-only revalidation on 2026-08-11 added the RL shadow research
+runtime (`torch`, `gymnasium`, `stable-baselines3`, `sb3-contrib` and their
+transitive packages). The immutable Phase 1 service hashes and the verified
+disconnect/reconnect drill are unchanged. The complete product suite passed
+1,900 tests, Ruff, compileall and diff checks before this hash was updated.
+RL execution authority and broker writes remain `NONE` and `0`.

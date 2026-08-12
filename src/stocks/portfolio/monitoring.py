@@ -15,21 +15,29 @@ OUTPUT_PATH = Path("output/portfolio/p1-monitoring.json")
 FREQUENCY_CONTRACTS: tuple[dict[str, Any], ...] = (
     {
         "frequency": "15m",
-        "role": "OPTIONAL_INTRADAY_RISK_AND_TIMING_OBSERVATION",
+        "role": "EARLIEST_TACTICAL_SWING_DECISION_AND_MANAGEMENT_LAYER",
         "features": [
             "price_change", "relative_volume", "spread", "gap_behavior",
             "breakout_pullback", "position_deterioration",
         ],
-        "required_for_opportunity": False,
+        "required_for_opportunity": "STRATEGY_CONTRACT_DEPENDENT",
     },
     {
         "frequency": "1h",
-        "role": "PRIMARY_ACTIVE_SWING_OPPORTUNITY_SCAN",
+        "role": "PRIMARY_SWING_SETUP_DEVELOPMENT",
         "features": [
             "trend", "momentum", "breakout", "mean_reversion",
             "relative_strength", "volume", "volatility", "ranking",
         ],
         "required_for_opportunity": False,
+    },
+    {
+        "frequency": "2h",
+        "role": "PRIMARY_SWING_SETUP_DEVELOPMENT",
+        "features": [
+            "trend", "momentum", "pullback", "breakout", "continuation",
+        ],
+        "required_for_opportunity": "STRATEGY_CONTRACT_DEPENDENT",
     },
     {
         "frequency": "4h",
@@ -48,6 +56,18 @@ FREQUENCY_CONTRACTS: tuple[dict[str, Any], ...] = (
             "commodity_trends", "ETF_leadership", "macro_sensitivity",
         ],
         "required_for_opportunity": True,
+    },
+    {
+        "frequency": "6h",
+        "role": "OPTIONAL_INTERMEDIATE_STRUCTURE_CONTEXT",
+        "features": ["trend_quality", "regime_confirmation"],
+        "required_for_opportunity": False,
+    },
+    {
+        "frequency": "12h",
+        "role": "OPTIONAL_INTERMEDIATE_STRUCTURE_CONTEXT",
+        "features": ["trend_quality", "regime_confirmation"],
+        "required_for_opportunity": False,
     },
     {
         "frequency": "1w",

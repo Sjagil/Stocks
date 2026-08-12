@@ -44,6 +44,9 @@ from stocks.ibkr.paper_execution.known_fill import (
     load_latest_phase8_private_snapshot,
     record_known_fill_from_snapshot,
 )
+from stocks.ibkr.paper_execution.historical_quarantine import (
+    build_historical_orphan_quarantine,
+)
 from stocks.ibkr.paper_execution.models import ManualPaperIntent, model_to_jsonable
 from stocks.ibkr.paper_execution.order_ids import allocate_order_id
 from stocks.ibkr.paper_execution.operator_completion import (
@@ -93,6 +96,7 @@ ARTIFACTS = [
     "canary-a-submit-cancel-evidence.json",
     "canary-a-evidence-freeze-status.json",
     "operator-attested-manual-completion.json",
+    "historical-orphan-quarantine.json",
     "fill-adoption-audit.json",
     "known-fill-observation.json",
     "commission-join-audit.json",
@@ -118,6 +122,7 @@ SOURCE_PATHS = [
     "src/stocks/ibkr/paper_execution/models.py",
     "src/stocks/ibkr/paper_execution/order_ids.py",
     "src/stocks/ibkr/paper_execution/operator_completion.py",
+    "src/stocks/ibkr/paper_execution/historical_quarantine.py",
     "src/stocks/ibkr/paper_execution/approvals.py",
     "src/stocks/ibkr/paper_execution/risk.py",
     "src/stocks/ibkr/paper_execution/state_mapping.py",
@@ -133,6 +138,7 @@ SOURCE_PATHS = [
     "tests/test_phase9_paper_execution.py",
     "tests/test_phase9_canary_a_evidence.py",
     "tests/test_phase9_operator_completion.py",
+    "tests/test_phase9_historical_quarantine.py",
     "PHASE9_STATUS.md",
     "PHASE9_FREEZE_REPORT.md",
     "docs/PHASE9_IBKR_MANUAL_PAPER_EXECUTION_ADAPTER.md",
@@ -543,6 +549,25 @@ def phase9_reconcile(project_root: Path) -> dict[str, Any]:
                 open_order_identity["missing_local_open_order_count"]
             ),
         )
+    operator_completion = load_operator_completion_evidence(project_root)
+    quarantine = build_historical_orphan_quarantine(
+        store,
+        observation=observation,
+        position_projection=position_projection,
+        operator_completion=operator_completion,
+    )
+    quarantine_payload = _artifact(
+        "phase9_historical_orphan_quarantine_v1",
+        {
+            **quarantine,
+            **authority_contract(enabled=False),
+            **FINANCIAL_STATUS,
+        },
+    )
+    write_json(
+        layout.artifact("historical-orphan-quarantine.json"),
+        quarantine_payload,
+    )
     payload = _artifact(
         "phase9_reconciliation_audit_v1",
         {
@@ -571,6 +596,21 @@ def phase9_reconcile(project_root: Path) -> dict[str, Any]:
             "read_only_request_counters": observation["read_only_request_counters"],
             "broker_write_counters": observation["broker_write_counters"],
             "broker_cancel_confirmations": cancel_confirmation_count,
+            "operational_broker_state_status": quarantine[
+                "operational_broker_state_status"
+            ],
+            "historical_orphan_quarantine_status": quarantine[
+                "quarantine_status"
+            ],
+            "historical_orphan_count": quarantine[
+                "historical_orphan_count"
+            ],
+            "canonical_execution_evidence_status": quarantine[
+                "canonical_execution_evidence_status"
+            ],
+            "operator_attestation_effect": quarantine[
+                "operator_attestation_effect"
+            ],
             "capital_reservations": store.capital_summary(),
             **authority_contract(enabled=False),
             **FINANCIAL_STATUS,
@@ -1026,18 +1066,13 @@ def phase9_status(project_root: Path) -> dict[str, Any]:
         ),
         "reconciliation": (
             artifacts.get("reconciliation-audit.json", {}).get("status") == "GO"
-            or operator_completion_go
         ),
         "submit_cancel_canary": (
             canary_a.get("status") == "CANARY_A_EVIDENCE_GO"
-            or operator_completion_go
         ),
-        "fill_canary": (
-            canary.get("fill_canary") == "GO" or operator_completion_go
-        ),
+        "fill_canary": canary.get("fill_canary") == "GO",
         "closing_sell_canary": (
             canary.get("closing_sell_canary") == "GO"
-            or operator_completion_go
         ),
         "phase8_2_freeze": _freeze_marker(project_root / "output" / "shadow" / "phase8_2" / "freeze-status.json"),
     }
@@ -1055,8 +1090,18 @@ def phase9_status(project_root: Path) -> dict[str, Any]:
             ),
             "completion_basis": (
                 "CANONICAL_PHASE9_LEDGER"
-                if not operator_completion_go
-                else "PHASE9_BUY_EXECUTION_AND_OPERATOR_ATTESTED_TWS_CLOSE"
+                if go
+                else "OPERATOR_ATTESTED_EXTERNAL_CLOSE_NON_CANONICAL"
+                if operator_completion_go
+                else "CANONICAL_PHASE9_EVIDENCE_INCOMPLETE"
+            ),
+            "operator_completion_effect": (
+                "BROKER_STATE_CONTEXT_ONLY_NO_CANONICAL_GATE_SATISFACTION"
+                if operator_completion_go
+                else "NONE"
+            ),
+            "canonical_execution_evidence_status": (
+                "GO" if go else "NO_GO"
             ),
             "api_closing_sell_path_proven": bool(
                 canary.get("closing_sell_canary") == "GO"

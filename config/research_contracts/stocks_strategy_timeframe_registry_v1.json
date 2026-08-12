@@ -1,16 +1,102 @@
 {
-  "contract_id": "STOCKS_SWING_STRATEGY_TIMEFRAME_REGISTRY_V2",
+  "contract_id": "STOCKS_ACTIVE_SWING_STRATEGY_TIMEFRAME_REGISTRY_V3",
   "status": "ACTIVE",
-  "allowed": ["1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo"],
-  "forbidden": ["1min", "5m", "15m", "30m", "tick", "ticks"],
+  "product": "AUTONOMOUS_RETAIL_ACTIVE_SWING_FROM_15M",
+  "earliest_core_decision_timeframe": "15m",
+  "allowed": ["15m", "1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo"],
+  "forbidden": ["1min", "5m", "30m", "tick", "ticks"],
   "primary_combinations": [
+    ["15m", "1h", "4h"],
+    ["15m", "4h", "1d"],
     ["1h", "4h", "1d"],
     ["4h", "1d", "1w"],
     ["1d", "1w", null],
     ["1w", "1mo", null]
   ],
+  "research_only_native_contracts": {
+    "1h": {
+      "architecture_id": "NATIVE_1H_RESEARCH_ONLY_V1",
+      "entry_timeframe": "1h",
+      "setup_timeframe": "1h",
+      "context_timeframes": [],
+      "structural_timeframe": "1h",
+      "management_timeframe": "1h",
+      "exit_timeframe": "1h",
+      "required_timeframes": ["1h"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    },
+    "2h": {
+      "architecture_id": "NATIVE_2H_RESEARCH_ONLY_V1",
+      "entry_timeframe": "2h",
+      "setup_timeframe": "2h",
+      "context_timeframes": [],
+      "structural_timeframe": "2h",
+      "management_timeframe": "2h",
+      "exit_timeframe": "2h",
+      "required_timeframes": ["2h"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    },
+    "4h": {
+      "architecture_id": "NATIVE_4H_RESEARCH_ONLY_V1",
+      "entry_timeframe": "4h",
+      "setup_timeframe": "4h",
+      "context_timeframes": [],
+      "structural_timeframe": "4h",
+      "management_timeframe": "4h",
+      "exit_timeframe": "4h",
+      "required_timeframes": ["4h"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    },
+    "1d": {
+      "architecture_id": "NATIVE_1D_RESEARCH_ONLY_V1",
+      "entry_timeframe": "1d",
+      "setup_timeframe": "1d",
+      "context_timeframes": [],
+      "structural_timeframe": "1d",
+      "management_timeframe": "1d",
+      "exit_timeframe": "1d",
+      "required_timeframes": ["1d"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    },
+    "1w": {
+      "architecture_id": "NATIVE_1W_RESEARCH_ONLY_V1",
+      "entry_timeframe": "1w",
+      "setup_timeframe": "1w",
+      "context_timeframes": [],
+      "structural_timeframe": "1w",
+      "management_timeframe": "1w",
+      "exit_timeframe": "1w",
+      "required_timeframes": ["1w"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    },
+    "1mo": {
+      "architecture_id": "NATIVE_1MO_RESEARCH_ONLY_V1",
+      "entry_timeframe": "1mo",
+      "setup_timeframe": "1mo",
+      "context_timeframes": [],
+      "structural_timeframe": "1mo",
+      "management_timeframe": "1mo",
+      "exit_timeframe": "1mo",
+      "required_timeframes": ["1mo"],
+      "optional_timeframes": [],
+      "session": "RTH"
+    }
+  },
+  "native_contract_policy": {
+    "status": "EXPLICIT_RESEARCH_ONLY_MIGRATION",
+    "single_timeframe_contracts_claim_multi_timeframe_edge": false,
+    "single_timeframe_contracts_grant_execution_authority": false,
+    "missing_declaration": "UNDECLARED_RESEARCH_ONLY",
+    "invalid_declaration": "INVALID_FAIL_CLOSED"
+  },
   "closed_candles_only": true,
   "causal_higher_timeframe_features": true,
+  "all_timeframes_need_not_agree": true,
   "long_only": true,
   "strategy_authority": "NONE",
   "execution_authority": "NONE"

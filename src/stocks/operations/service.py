@@ -14,6 +14,10 @@ from zoneinfo import ZoneInfo
 
 from filelock import FileLock, Timeout
 
+from stocks.operations.background_jobs import (
+    background_job_status,
+    launch_background_job,
+)
 from stocks.application.phase_gates import phase1_freeze_status
 from stocks.ibkr.paper_execution import (
     PHASE9_MARKER,
@@ -59,6 +63,7 @@ from stocks.operations.paper_writer import (
     execute_automatic_paper_cycle,
 )
 from stocks.signals.storage import SignalStore
+from stocks.signals.active_swing import active_swing_context_gaps
 
 
 MACHINE_MODES = {
@@ -113,6 +118,7 @@ INTRADAY_CHALLENGER_POOL_LIMIT = 150
 INTRADAY_PRIORITY_SYMBOL_LIMIT = 25
 INTRADAY_COLLECTION_SYMBOL_LIMIT = 50
 MARKET_CONTEXT_SYMBOL_LIMIT = 30
+OPERATIONS_PROFILE_PATH = Path("config/operations/autonomous_multi_asset_v1.json")
 
 
 def execution_command(
@@ -208,9 +214,7 @@ def execution_command(
         if report["status"] != "GO":
             return {
                 **report,
-                "reconciliation_status": reconciliation.get(
-                    "reconciliation_status"
-                ),
+                "reconciliation_status": reconciliation.get("reconciliation_status"),
                 "execution_authority": "NONE",
                 "automatic_orders_allowed": False,
             }
@@ -250,9 +254,7 @@ def execution_command(
                 return {
                     **capability,
                     "reconciliation_status": (
-                        reconciliation.get("reconciliation_status")
-                        if reconciliation
-                        else None
+                        reconciliation.get("reconciliation_status") if reconciliation else None
                     ),
                     "automatic_orders_allowed": False,
                 }
@@ -339,13 +341,7 @@ def execution_command(
         return transition
     if command == "paper-fill-close-canary":
         status = phase9_status(project_root)
-        readiness_path = (
-            project_root
-            / "output"
-            / "ibkr"
-            / "phase9"
-            / "canary-b-readiness.json"
-        )
+        readiness_path = project_root / "output" / "ibkr" / "phase9" / "canary-b-readiness.json"
         readiness = _read_json(readiness_path)
         complete = bool(status.get("checks", {}).get("fill_canary"))
         return _publish(
@@ -368,9 +364,7 @@ def execution_command(
                 ],
                 "automatic_canary_submission": False,
                 "reason": (
-                    None
-                    if complete
-                    else "CURRENT_PRICE_AND_EXACT_PER_INTENT_APPROVAL_REQUIRED"
+                    None if complete else "CURRENT_PRICE_AND_EXACT_PER_INTENT_APPROVAL_REQUIRED"
                 ),
                 "execution_authority": "NONE",
                 "paper_place_order_calls": 0,
@@ -386,8 +380,7 @@ def execution_command(
     if command == "paper-writer-cycle":
         authority = (
             AUTO_PAPER_AUTHORITY
-            if state.get("mode") == "PAPER_AUTOMATIC"
-            and state.get("paper_enabled")
+            if state.get("mode") == "PAPER_AUTOMATIC" and state.get("paper_enabled")
             else "NONE"
         )
         return execute_automatic_paper_cycle(
@@ -500,10 +493,7 @@ def _requested_mode_enablement(
     if mode == "PAPER_AUTOMATIC":
         return bool(state.get("paper_enabled")), False
     if mode in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"}:
-        authority = str(
-            authority_status(project_root).get("execution_authority")
-            or "NONE"
-        )
+        authority = str(authority_status(project_root).get("execution_authority") or "NONE")
         return False, authority in {
             LIVE_LEVEL_ONE,
             AUTONOMOUS_LEVEL_ONE,
@@ -540,25 +530,17 @@ def positions_command(
             {
                 "schema": "managed_positions_status_v1",
                 "status": "GO",
-                "paper_reconciliation_status": paper.get(
-                    "reconciliation_status"
-                ),
-                "paper_position_count": paper.get(
-                    "broker_position_count", 0
-                ),
-                "paper_open_order_count": paper.get(
-                    "broker_open_order_count", 0
-                ),
+                "paper_reconciliation_status": paper.get("reconciliation_status"),
+                "paper_position_count": paper.get("broker_position_count", 0),
+                "paper_open_order_count": paper.get("broker_open_order_count", 0),
                 "live_status": live.get("status"),
                 "manual_position_count": len(manual),
                 "manual_ownership_counts": ownership_counts,
                 "manual_broker_unverified_count": sum(
-                    row.get("broker_match_status") != "MATCHED"
-                    for row in manual
+                    row.get("broker_match_status") != "MATCHED" for row in manual
                 ),
                 "manual_auto_execution_eligible_count": sum(
-                    bool(row.get("automatic_execution_eligible"))
-                    for row in manual
+                    bool(row.get("automatic_execution_eligible")) for row in manual
                 ),
                 "manual_financial_values_public": False,
                 "execution_authority": "NONE",
@@ -585,8 +567,7 @@ def positions_command(
                 "status": "OPERATOR_ACTION_REQUIRED",
                 "symbol": symbol.upper(),
                 "reason": (
-                    "USE_PHASE9_PREPARE_SELL_APPROVE_AND_SUBMIT_AFTER_"
-                    "RECONCILED_POSITION_MATCH"
+                    "USE_PHASE9_PREPARE_SELL_APPROVE_AND_SUBMIT_AFTER_RECONCILED_POSITION_MATCH"
                 ),
                 "automatic_close_submission": False,
                 "execution_authority": "NONE",
@@ -616,9 +597,7 @@ def positions_command(
                 "quantity": str(quantity),
                 "fill_price": str(fill_price),
                 "preferred_entry": str(preferred_entry),
-                "entry_slippage_value": str(
-                    (fill_price - preferred_entry) * quantity
-                ),
+                "entry_slippage_value": str((fill_price - preferred_entry) * quantity),
                 "initial_stop": signal.get("initial_stop"),
                 "take_profit_1": signal.get("take_profit_1"),
                 "take_profit_2": signal.get("take_profit_2"),
@@ -628,9 +607,7 @@ def positions_command(
                 project_root,
                 signal,
             )
-            private_payload["contract_resolution_status"] = contract[
-                "status"
-            ]
+            private_payload["contract_resolution_status"] = contract["status"]
             try:
                 position = store.register_manual_position(
                     signal_id=signal_id,
@@ -668,16 +645,12 @@ def positions_command(
             if snapshot_hash:
                 stored = store.set_manual_position_broker_match(
                     position_id=position_id,
-                    broker_match_status=str(
-                        audit["broker_match_status"]
-                    ),
+                    broker_match_status=str(audit["broker_match_status"]),
                     snapshot_hash=str(snapshot_hash),
                     detail=dict(audit.get("private_detail", {})),
                 )
         public_position = stored or matched_position
-        public_position["broker_match_status"] = audit[
-            "broker_match_status"
-        ]
+        public_position["broker_match_status"] = audit["broker_match_status"]
         return _publish(
             project_root,
             "manual-position-broker-match.json",
@@ -686,15 +659,9 @@ def positions_command(
                     public_position,
                     status=str(audit["status"]),
                 ),
-                "snapshot_age_seconds": audit.get(
-                    "snapshot_age_seconds"
-                ),
-                "broker_position_count": audit.get(
-                    "broker_position_count"
-                ),
-                "identity_match_count": audit.get(
-                    "identity_match_count"
-                ),
+                "snapshot_age_seconds": audit.get("snapshot_age_seconds"),
+                "broker_position_count": audit.get("broker_position_count"),
+                "identity_match_count": audit.get("identity_match_count"),
                 "quantity_match": audit.get("quantity_match", False),
                 "private_match_values_public": False,
             },
@@ -706,13 +673,9 @@ def positions_command(
             return _blocked("POSITION_ID_REQUIRED")
         if command == "claim" and ownership_mode != "bot-managed":
             return _blocked("BOT_MANAGED_MODE_REQUIRED")
-        to_ownership = (
-            "BOT_MANAGED" if command == "claim" else "MANUAL_TRACKED"
-        )
+        to_ownership = "BOT_MANAGED" if command == "claim" else "MANUAL_TRACKED"
         event_type = (
-            "MANUAL_POSITION_CLAIMED"
-            if command == "claim"
-            else "MANUAL_POSITION_UNCLAIMED"
+            "MANUAL_POSITION_CLAIMED" if command == "claim" else "MANUAL_POSITION_UNCLAIMED"
         )
         with SignalStore(project_root) as store:
             try:
@@ -767,8 +730,7 @@ def _run_cycles(
                     time.sleep(interval)
             run_status = (
                 "GO"
-                if records
-                and all(record.get("status") == "GO" for record in records)
+                if records and all(record.get("status") == "GO" for record in records)
                 else "DEGRADED"
                 if records
                 else "NO_GO"
@@ -782,17 +744,13 @@ def _run_cycles(
                 "cycles_completed": len(records),
                 "interval_seconds": interval,
                 "cycles": records,
-                "execution_authority": records[-1]["execution_authority"]
-                if records
-                else "NONE",
+                "execution_authority": records[-1]["execution_authority"] if records else "NONE",
             }
     except Timeout:
         return _blocked("MACHINE_SINGLE_INSTANCE_LOCKED")
 
 
-def _cycle(
-    project_root: Path, state: dict[str, Any], requested_mode: str
-) -> dict[str, Any]:
+def _cycle(project_root: Path, state: dict[str, Any], requested_mode: str) -> dict[str, Any]:
     started = datetime.now(UTC)
     cycle_id = f"CYCLE-{started.strftime('%Y%m%dT%H%M%S%fZ')}"
     _cycle_progress(project_root, cycle_id, "PHASE1_FREEZE", "STARTED")
@@ -806,11 +764,52 @@ def _cycle(
     )
     mode = _effective_mode(state, requested_mode)
     intraday_refresh_plan = _intraday_refresh_plan(project_root, state)
-    data_refresh = (
+    tactical_cadence = _cadence_hours(project_root, "tactical_15m_bars", 0.25)
+    primary_cadence = _cadence_hours(project_root, "primary_1h_scan", 1.0)
+    portfolio_cadence = _cadence_hours(project_root, "portfolio_fast_path", 0.25)
+    tactical_due = _refresh_due(
+        state.get("last_tactical_data_refresh"),
+        hours=tactical_cadence,
+    )
+    primary_refresh_report = _read_json(project_root / "output/operations/primary-refresh.json")
+    primary_due = _primary_step_due(
+        primary_refresh_report,
+        "MARKET_DATA",
+        hours=primary_cadence,
+    )
+    observed_positions_present = _has_observed_positions(project_root)
+    fast_path_due = (
+        tactical_due
+        or observed_positions_present
+        or _refresh_due(
+            state.get("last_portfolio_refresh"),
+            hours=portfolio_cadence,
+        )
+    )
+    reconciliation_arguments = _reconciliation_arguments(project_root, mode)
+    reconciliation = _observed_command_step(
+        project_root,
+        cycle_id,
+        "RECONCILIATION",
+        reconciliation_arguments,
+        timeout_seconds=60,
+    )
+    priority_portfolio = (
         _observed_command_step(
             project_root,
             cycle_id,
-            "MARKET_DATA",
+            "POSITION_RISK_MANAGER",
+            ("portfolio", "plan"),
+            timeout_seconds=120,
+        )
+        if observed_positions_present
+        else {"status": "NOT_APPLICABLE_NO_OBSERVED_POSITIONS"}
+    )
+    tactical_data_refresh = (
+        _observed_command_step(
+            project_root,
+            cycle_id,
+            "MARKET_DATA_15M",
             (
                 "data",
                 "multitimeframe",
@@ -818,7 +817,7 @@ def _cycle(
                 "--symbols",
                 ",".join(intraday_refresh_plan["symbols"]),
                 "--intervals",
-                "1h,2h,4h,1d,1w,1mo",
+                "15m",
                 "--providers",
                 "local,datascraper,yfinance",
                 "--lookback-days",
@@ -826,70 +825,129 @@ def _cycle(
             ),
             timeout_seconds=240,
         )
-        if _refresh_due(state.get("last_data_refresh"), hours=1)
+        if tactical_due
         else {"status": "NOT_DUE"}
     )
-    daily = (
+    active_swing_context_gap_audit = (
+        active_swing_context_gaps(
+            project_root,
+            intraday_refresh_plan["symbols"],
+        )
+        if tactical_due
+        else {
+            "schema": "active_swing_context_gap_audit_v1",
+            "status": "NOT_DUE",
+            "gap_symbol_count": 0,
+            "gap_symbols": [],
+        }
+    )
+    context_gap_symbols = active_swing_context_gap_audit.get("gap_symbols", [])
+    context_gap_symbols = (
+        [str(symbol).upper() for symbol in context_gap_symbols]
+        if isinstance(context_gap_symbols, list)
+        else []
+    )
+    if not tactical_due:
+        active_swing_context_bootstrap = {"status": "NOT_DUE"}
+    elif not _is_success_status(tactical_data_refresh):
+        active_swing_context_bootstrap = {
+            "status": "DATA_BLOCKED",
+            "blockers": ["TACTICAL_MARKET_DATA_REFRESH_REQUIRED"],
+        }
+    elif not context_gap_symbols:
+        active_swing_context_bootstrap = {
+            "schema": "active_swing_context_bootstrap_v1",
+            "status": "GO",
+            "refresh_required": False,
+            "gap_symbol_count": 0,
+            "execution_authority": "NONE",
+            "broker_calls": 0,
+            "broker_writes": 0,
+            "orders_generated": 0,
+        }
+    else:
+        active_swing_context_bootstrap = _observed_command_step(
+            project_root,
+            cycle_id,
+            "ACTIVE_SWING_CONTEXT_BOOTSTRAP",
+            (
+                "data",
+                "multitimeframe",
+                "collect",
+                "--symbols",
+                ",".join(context_gap_symbols),
+                "--intervals",
+                "1h,4h",
+                "--providers",
+                "local,datascraper,yfinance",
+                "--lookback-days",
+                "30",
+            ),
+            timeout_seconds=180,
+        )
+    active_swing_candidates = (
         _observed_command_step(
             project_root,
             cycle_id,
-            "DAILY",
-            ("daily", "--no-autopilot"),
-            timeout_seconds=600,
+            "ACTIVE_SWING_15M_CANDIDATES",
+            (
+                "signals",
+                "active-swing-refresh",
+                "--symbols",
+                ",".join(intraday_refresh_plan["symbols"]),
+            ),
+            timeout_seconds=60,
         )
-        if _refresh_due(state.get("last_daily_refresh"), hours=20)
-        else {"status": "NOT_DUE"}
+        if _is_success_status(tactical_data_refresh)
+        else {
+            "status": "DATA_BLOCKED" if tactical_due else "NOT_DUE",
+            "blockers": (["TACTICAL_MARKET_DATA_REFRESH_REQUIRED"] if tactical_due else []),
+        }
     )
-    hmm_regime = _observed_command_step(
-        project_root,
-        cycle_id,
-        "HMM_REGIME",
-        ("regimes", "current"),
-        timeout_seconds=120,
+    primary_background_current = background_job_status(project_root, "primary_refresh")
+    primary_background_due = _background_refresh_due(
+        primary_background_current,
+        hours=tactical_cadence,
     )
-    dynamic = (
-        _observed_command_step(
+    if primary_background_due:
+        _cycle_progress(
             project_root,
             cycle_id,
-            "DYNAMIC",
-            ("dynamic", "daily"),
-            timeout_seconds=600,
+            "PRIMARY_BACKGROUND",
+            "STARTED",
         )
-        if _downstream_refresh_due(
-            data_refresh,
-            state.get("last_dynamic_refresh"),
-            hours=1,
+        primary_background = launch_background_job(
+            project_root,
+            "primary_refresh",
+            ("primary-refresh",),
+            timeout_seconds=7_200,
         )
-        else {"status": "NOT_DUE"}
-    )
+        _cycle_progress(
+            project_root,
+            cycle_id,
+            "PRIMARY_BACKGROUND",
+            "COMPLETED",
+            component_status=_normalized_status(primary_background),
+        )
+    else:
+        primary_background = primary_background_current
+    data_refresh = _delegated_primary(primary_background, "MARKET_DATA")
+    daily = _delegated_primary(primary_background, "DAILY")
+    hmm_regime = _delegated_primary(primary_background, "HMM_REGIME")
+    dynamic = {
+        **_delegated_primary(primary_background, "DYNAMIC"),
+        "signals": _read_json(project_root / "output/dynamic/current_signals.json"),
+    }
     lifecycle = (
         _signal_lifecycle(project_root, dynamic)
-        if _is_success_status(dynamic)
+        if fast_path_due
         else {
-            "status": (
-                "NOT_DUE"
-                if _normalized_status(dynamic) == "NOT_DUE"
-                else "DATA_BLOCKED"
-            ),
+            "status": "NOT_DUE",
             "fresh_entry_count": 0,
             "exit_count": 0,
         }
     )
-    multitimeframe_watchlist = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "MULTITIMEFRAME_WATCHLIST",
-            ("research", "phase11-10", "watchlist"),
-            timeout_seconds=120,
-        )
-        if _downstream_refresh_due(
-            data_refresh,
-            state.get("last_multitimeframe_watchlist_refresh"),
-            hours=20,
-        )
-        else {"status": "NOT_DUE"}
-    )
+    multitimeframe_watchlist = _delegated_primary(primary_background, "MULTITIMEFRAME_WATCHLIST")
     multitimeframe_pit_observation = (
         _observed_command_step(
             project_root,
@@ -900,7 +958,7 @@ def _cycle(
         )
         if _refresh_due(
             state.get("last_multitimeframe_pit_observation_refresh"),
-            hours=1,
+            hours=tactical_cadence,
         )
         else {"status": "NOT_DUE"}
     )
@@ -915,200 +973,71 @@ def _cycle(
         if _is_success_status(multitimeframe_pit_observation)
         else {"status": "NOT_DUE"}
     )
-    fast_track_observation = (
+    fast_track_observation = _delegated_primary(primary_background, "FAST_TRACK_OBSERVATION")
+    broad_shadow_observation = _delegated_primary(primary_background, "BROAD_SHADOW_OBSERVATION")
+    survivor_shadow_observation = _delegated_primary(
+        primary_background, "SURVIVOR_SHADOW_OBSERVATION"
+    )
+    broad_shadow_notification = _delegated_primary(primary_background, "BROAD_SHADOW_NOTIFICATION")
+    macro = _delegated_primary(primary_background, "MACRO")
+    news_digest = _delegated_primary(primary_background, "NEWS_DIGEST")
+    market_context = _delegated_primary(primary_background, "MARKET_CONTEXT")
+    cot_context = _delegated_primary(primary_background, "COT_CONTEXT")
+    asset_context = _delegated_primary(primary_background, "ASSET_CONTEXT")
+    entry_observer = (
         _observed_command_step(
             project_root,
             cycle_id,
-            "FAST_TRACK_OBSERVATION",
-            ("research", "phase11-13", "observe"),
-            timeout_seconds=180,
-        )
-        if _refresh_due(
-            state.get("last_fast_track_observation_refresh"),
-            hours=20,
-        )
-        else {"status": "NOT_DUE"}
-    )
-    broad_shadow_observation = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "BROAD_SHADOW_OBSERVATION",
-            ("research", "phase11-12", "observe"),
-            timeout_seconds=300,
-        )
-        if _refresh_due(
-            state.get("last_broad_shadow_observation_refresh"),
-            hours=1,
-        )
-        else {"status": "NOT_DUE"}
-    )
-    survivor_shadow_observation = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "SURVIVOR_SHADOW_OBSERVATION",
-            ("research", "phase11-14", "observe"),
-            timeout_seconds=300,
-        )
-        if _refresh_due(
-            state.get("last_survivor_shadow_observation_refresh"),
-            hours=1,
-        )
-        else {"status": "NOT_DUE"}
-    )
-    broad_shadow_notification = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "BROAD_SHADOW_NOTIFICATION",
-            ("telegram", "send-shadow-digest"),
-            timeout_seconds=60,
-        )
-        if (
-            _is_success_status(broad_shadow_observation)
-            or _is_success_status(survivor_shadow_observation)
-        )
-        else {"status": "NOT_DUE"}
-    )
-    macro = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "MACRO_UPDATE",
-            ("macro", "update"),
-            timeout_seconds=240,
-        )
-        if _refresh_due(state.get("last_macro_refresh"), hours=1)
-        else _observed_command_step(
-            project_root,
-            cycle_id,
-            "MACRO_STATUS",
-            ("macro", "status"),
-            timeout_seconds=30,
-        )
-    )
-    news_digest = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "NEWS_DIGEST",
-            ("telegram", "market-digest-preview"),
-            timeout_seconds=120,
-        )
-        if _refresh_due(state.get("last_news_refresh"), hours=1)
-        else {"status": "NOT_DUE"}
-    )
-    market_context_symbols = _market_context_symbols(
-        intraday_refresh_plan["symbols"]
-    )
-    market_context = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "MARKET_CONTEXT",
+            "ENTRY_OBSERVER",
             (
                 "market",
                 "context",
-                "build",
-                "--symbols",
-                ",".join(market_context_symbols),
-                "--max-expirations",
-                "4",
+                "observe",
+                "--max-symbols",
+                "20",
+                "--depth-symbols",
+                "5",
             ),
-            timeout_seconds=240,
+            timeout_seconds=60,
         )
-        if _refresh_due(state.get("last_market_context_refresh"), hours=1)
-        else _observed_command_step(
-            project_root,
-            cycle_id,
-            "MARKET_CONTEXT_STATUS",
-            ("market", "context", "status"),
-            timeout_seconds=30,
-        )
-    )
-    cot_context = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "COT_CONTEXT",
-            ("market", "context", "cot-update", "--start", "2018-01-01"),
-            timeout_seconds=180,
-        )
-        if _refresh_due(state.get("last_cot_context_refresh"), hours=24)
-        else _observed_command_step(
-            project_root,
-            cycle_id,
-            "COT_CONTEXT_STATUS",
-            ("market", "context", "cot-status"),
-            timeout_seconds=30,
-        )
-    )
-    asset_context = _observed_command_step(
-        project_root,
-        cycle_id,
-        "ASSET_CONTEXT",
-        ("market", "context", "transmission"),
-        timeout_seconds=60,
-    )
-    entry_observer = _observed_command_step(
-        project_root,
-        cycle_id,
-        "ENTRY_OBSERVER",
-        (
-            "market",
-            "context",
-            "observe",
-            "--max-symbols",
-            "20",
-            "--depth-symbols",
-            "5",
-        ),
-        timeout_seconds=60,
-    )
-    episode_outcomes = _observed_command_step(
-        project_root,
-        cycle_id,
-        "ENTRY_EPISODE_OUTCOMES",
-        ("market", "context", "settle-episodes"),
-        timeout_seconds=120,
-    )
-    active_swing_sprints = _observed_command_step(
-        project_root,
-        cycle_id,
-        "ACTIVE_SWING_SPRINTS",
-        ("research", "active-swing", "refresh"),
-        timeout_seconds=120,
-    )
-    role_leaderboards = (
-        _observed_command_step(
-            project_root,
-            cycle_id,
-            "ROLE_LEADERBOARDS",
-            ("research", "registry", "roles"),
-            timeout_seconds=120,
-        )
-        if _refresh_due(
-            state.get("last_role_leaderboards_refresh"), hours=24
-        )
+        if fast_path_due
         else {"status": "NOT_DUE"}
     )
-    reconciliation_arguments = _reconciliation_arguments(
-        project_root, mode
+    episode_outcomes = (
+        _observed_command_step(
+            project_root,
+            cycle_id,
+            "ENTRY_EPISODE_OUTCOMES",
+            ("market", "context", "settle-episodes"),
+            timeout_seconds=120,
+        )
+        if fast_path_due
+        else {"status": "NOT_DUE"}
     )
-    reconciliation = _observed_command_step(
-        project_root,
-        cycle_id,
-        "RECONCILIATION",
-        reconciliation_arguments,
-        timeout_seconds=60,
-    )
-    portfolio = _observed_command_step(
-        project_root,
-        cycle_id,
-        "PORTFOLIO_MANAGER",
-        ("portfolio", "plan"),
-        timeout_seconds=120,
+    active_swing_sprints = _delegated_primary(primary_background, "ACTIVE_SWING_SPRINTS")
+    role_leaderboards = _delegated_primary(primary_background, "ROLE_LEADERBOARDS")
+    if observed_positions_present:
+        portfolio = priority_portfolio
+    elif fast_path_due:
+        portfolio = _observed_command_step(
+            project_root,
+            cycle_id,
+            "PORTFOLIO_MANAGER",
+            ("portfolio", "plan"),
+            timeout_seconds=120,
+        )
+    else:
+        portfolio = {"status": "NOT_DUE"}
+    ai_decision_intelligence = (
+        _observed_command_step(
+            project_root,
+            cycle_id,
+            "AI_DECISION_INTELLIGENCE",
+            ("ai", "enqueue-refresh"),
+            timeout_seconds=30,
+        )
+        if _is_success_status(portfolio)
+        else {"status": "NOT_DUE"}
     )
     exit_notification = _observed_command_step(
         project_root,
@@ -1117,35 +1046,36 @@ def _cycle(
         ("telegram", "send-exit-signals"),
         timeout_seconds=60,
     )
-    research = (
-        _observed_command_step(
+    research_due = _research_due(project_root)
+    if research_due:
+        _cycle_progress(
             project_root,
             cycle_id,
-            "RESEARCH",
+            "RESEARCH_BACKGROUND",
+            "STARTED",
+        )
+        research = launch_background_job(
+            project_root,
+            "research",
             ("autopilot", "run-once"),
             timeout_seconds=7_200,
         )
-        if _research_due(project_root)
-        else {"status": "NOT_DUE"}
-    )
-    p3_evidence = (
-        _observed_command_step(
+        _cycle_progress(
             project_root,
             cycle_id,
-            "P3_EVIDENCE",
-            ("p3", "publish"),
-            timeout_seconds=300,
+            "RESEARCH_BACKGROUND",
+            "COMPLETED",
+            component_status=_normalized_status(research),
         )
-        if _refresh_due(state.get("last_p3_evidence_refresh"), hours=1)
-        else {"status": "NOT_DUE"}
+    else:
+        research = {"status": "NOT_DUE"}
+    research_background = (
+        research if research_due else background_job_status(project_root, "research")
     )
-    hmm_notification = _observed_command_step(
-        project_root,
-        cycle_id,
-        "HMM_NOTIFICATION",
-        ("telegram", "send-regime-update"),
-        timeout_seconds=60,
-    )
+    p3_evidence = _delegated_primary(primary_background, "P3_EVIDENCE")
+    rl_shadow = _delegated_primary(primary_background, "RL_SHADOW")
+    p4_evidence = _delegated_primary(primary_background, "P4_EVIDENCE")
+    hmm_notification = _delegated_primary(primary_background, "HMM_NOTIFICATION")
     telegram = _observed_command_step(
         project_root,
         cycle_id,
@@ -1155,6 +1085,10 @@ def _cycle(
     )
     blockers: list[str] = []
     operational_steps = {
+        "RECONCILIATION": reconciliation,
+        "MARKET_DATA_15M": tactical_data_refresh,
+        "ACTIVE_SWING_CONTEXT_BOOTSTRAP": active_swing_context_bootstrap,
+        "ACTIVE_SWING_15M_CANDIDATES": active_swing_candidates,
         "MARKET_DATA": data_refresh,
         "DAILY": daily,
         "HMM_REGIME": hmm_regime,
@@ -1175,11 +1109,13 @@ def _cycle(
         "ENTRY_EPISODE_OUTCOMES": episode_outcomes,
         "ACTIVE_SWING_SPRINTS": active_swing_sprints,
         "ROLE_LEADERBOARDS": role_leaderboards,
-        "RECONCILIATION": reconciliation,
         "PORTFOLIO_MANAGER": portfolio,
+        "AI_DECISION_INTELLIGENCE": ai_decision_intelligence,
         "EXIT_NOTIFICATION": exit_notification,
         "RESEARCH": research,
         "P3_EVIDENCE": p3_evidence,
+        "RL_SHADOW": rl_shadow,
+        "P4_EVIDENCE": p4_evidence,
         "HMM_NOTIFICATION": hmm_notification,
         "TELEGRAM": telegram,
     }
@@ -1191,9 +1127,7 @@ def _cycle(
     if not phase1.frozen:
         blockers.append("PHASE1_FREEZE_INTEGRITY_BLOCKED")
     if mode == "PAPER_AUTOMATIC":
-        preflight = automatic_paper_preflight(
-            project_root, ".env.ibkr"
-        )
+        preflight = automatic_paper_preflight(project_root, ".env.ibkr")
         blockers.extend(preflight["blockers"])
         if not blockers:
             authority = AUTO_PAPER_AUTHORITY
@@ -1204,9 +1138,7 @@ def _cycle(
         )
         live_authority = authority_status(project_root)
         blockers.extend(live_gate.get("blockers", []))
-        active_live_authority = str(
-            live_authority.get("execution_authority") or "NONE"
-        )
+        active_live_authority = str(live_authority.get("execution_authority") or "NONE")
         if active_live_authority not in {
             LIVE_LEVEL_ONE,
             AUTONOMOUS_LEVEL_ONE,
@@ -1292,6 +1224,38 @@ def _cycle(
         "effective_mode": mode,
         "phase1_freeze_integrity": phase1.status,
         "intraday_refresh_plan": intraday_refresh_plan,
+        "scheduling": {
+            "schema": "active_swing_cadence_decision_v1",
+            "tactical_15m_due": tactical_due,
+            "primary_1h_due": primary_due,
+            "fast_path_due": fast_path_due,
+            "observed_positions_present": observed_positions_present,
+            "tactical_cadence_hours": tactical_cadence,
+            "primary_cadence_hours": primary_cadence,
+            "portfolio_cadence_hours": portfolio_cadence,
+            "heavy_research_due": research_due,
+            "heavy_research_execution": "DETACHED_BACKGROUND_JOB",
+            "heavy_research_resource_priority": "BELOW_NORMAL",
+            "heavy_research_can_block_money_loop": False,
+            "primary_context_execution": "DETACHED_BACKGROUND_JOB",
+            "primary_context_resource_priority": "BELOW_NORMAL",
+            "primary_context_can_block_money_loop": False,
+            "reconciliation_executed_before_market_data": True,
+            "position_risk_executed_before_discovery": bool(observed_positions_present),
+            "tactical_candidate_path": "DEDICATED_15M_OBSERVER_ARTIFACT",
+            "tactical_context_bootstrap": ("MISSING_OR_STALE_1H_4H_GAPS_ONLY"),
+            "tactical_context_gap_count": len(context_gap_symbols),
+            "full_dynamic_scan_tactical_path_allowed": False,
+            "full_dynamic_scan_primary_path_due": bool(primary_due),
+            "full_dynamic_scan_foreground_allowed": False,
+            "position_management_priority": 1,
+            "new_entry_evaluation_priority": 4,
+            "heavy_research_priority": 5,
+        },
+        "tactical_market_data": _summary(tactical_data_refresh),
+        "active_swing_context_gap_audit": active_swing_context_gap_audit,
+        "active_swing_context_bootstrap": _summary(active_swing_context_bootstrap),
+        "active_swing_15m_candidates": _summary(active_swing_candidates),
         "market_data": _summary(data_refresh),
         "daily": _summary(daily),
         "hmm_regime": _summary(hmm_regime),
@@ -1301,49 +1265,28 @@ def _cycle(
             "fresh_entry_count": lifecycle["fresh_entry_count"],
             "exit_count": lifecycle["exit_count"],
         },
-        "multitimeframe_watchlist": _summary(
-            multitimeframe_watchlist
-        ),
-        "multitimeframe_pit_observation": _summary(
-            multitimeframe_pit_observation
-        ),
-        "multitimeframe_pit_notification": _summary(
-            multitimeframe_pit_notification
-        ),
-        "fast_track_observation": _summary(
-            fast_track_observation
-        ),
-        "broad_shadow_observation": _summary(
-            broad_shadow_observation
-        ),
-        "survivor_shadow_observation": _summary(
-            survivor_shadow_observation
-        ),
-        "broad_shadow_notification": _summary(
-            broad_shadow_notification
-        ),
+        "multitimeframe_watchlist": _summary(multitimeframe_watchlist),
+        "multitimeframe_pit_observation": _summary(multitimeframe_pit_observation),
+        "multitimeframe_pit_notification": _summary(multitimeframe_pit_notification),
+        "fast_track_observation": _summary(fast_track_observation),
+        "broad_shadow_observation": _summary(broad_shadow_observation),
+        "survivor_shadow_observation": _summary(survivor_shadow_observation),
+        "broad_shadow_notification": _summary(broad_shadow_notification),
         "macro": _summary(macro),
         "news_digest": _summary(news_digest),
         "market_context": _summary(market_context),
         "cot_context": _summary(cot_context),
         "asset_context": _summary(asset_context),
         "entry_observer": _summary(entry_observer),
-        "entry_observer_state_counts": entry_observer.get(
-            "state_counts", {}
-        ),
+        "entry_observer_state_counts": entry_observer.get("state_counts", {}),
         "entry_episode_outcomes": _summary(episode_outcomes),
-        "entry_episode_completion_ratio": episode_outcomes.get(
-            "completion_ratio"
-        ),
+        "entry_episode_completion_ratio": episode_outcomes.get("completion_ratio"),
         "active_swing_sprints": _summary(active_swing_sprints),
         "role_leaderboards": _summary(role_leaderboards),
-        "market_context_policy": (
-            "CONTEXT_ONLY_NO_STANDALONE_ENTRY_AUTHORITY"
-        ),
+        "market_context_policy": ("CONTEXT_ONLY_NO_STANDALONE_ENTRY_AUTHORITY"),
         "macro_context_policy": (
             "OPTIONAL_PARTIAL_CONTEXT_NON_BLOCKING"
-            if _macro_context_usable(macro)
-            and _normalized_status(macro) == "DATA_INCOMPLETE"
+            if _macro_context_usable(macro) and _normalized_status(macro) == "DATA_INCOMPLETE"
             else "STANDARD"
         ),
         "reconciliation": _summary(reconciliation),
@@ -1352,14 +1295,34 @@ def _cycle(
             if reconciliation_arguments == ("live", "reconcile")
             else "PAPER_READ_ONLY"
         ),
-        "reconciliation_status": reconciliation.get(
-            "reconciliation_status"
+        "reconciliation_status": reconciliation.get("reconciliation_status"),
+        "reconciliation_operationally_usable": (_reconciliation_read_only_usable(reconciliation)),
+        "reconciliation_operational_broker_state": reconciliation.get(
+            "operational_broker_state_status"
+        ),
+        "reconciliation_historical_execution_evidence": reconciliation.get(
+            "canonical_execution_evidence_status"
+        ),
+        "reconciliation_historical_quarantine_status": reconciliation.get(
+            "historical_orphan_quarantine_status"
+        ),
+        "reconciliation_historical_execution_blocks_trading": (
+            reconciliation.get("canonical_execution_evidence_status")
+            == "INCOMPLETE_HISTORICAL_EXECUTION_CHAIN"
         ),
         "portfolio_manager": _summary(portfolio),
+        "portfolio_priority_path": (
+            "POSITION_RISK_FIRST" if observed_positions_present else "DISCOVERY_AFTER_CONTEXT"
+        ),
+        "ai_decision_intelligence": _summary(ai_decision_intelligence),
         "exit_notification": _summary(exit_notification),
         "daily_performance": _summary(daily_performance),
         "research": _summary(research),
+        "research_background": _summary(research_background),
+        "primary_background": _summary(primary_background),
         "p3_evidence": _summary(p3_evidence),
+        "rl_shadow": _summary(rl_shadow),
+        "p4_evidence": _summary(p4_evidence),
         "research_data_policy": (
             "PIT_ELIGIBILITY_UNAVAILABLE_FAIL_CLOSED_NON_OPERATIONAL"
             if _research_data_blocked_expected(research)
@@ -1383,9 +1346,7 @@ def _cycle(
         "orders_generated": orders_generated,
         "broker_writes": orders_generated,
         "paper_place_order_calls": (
-            0
-            if mode in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"}
-            else orders_generated
+            0 if mode in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"} else orders_generated
         ),
         "live_place_order_calls": (
             orders_generated
@@ -1402,9 +1363,14 @@ def _cycle(
     )
     if _is_success_status(data_refresh):
         state["last_data_refresh"] = completed.isoformat()
-        state["intraday_refresh_cursor"] = intraday_refresh_plan[
-            "next_cursor"
-        ]
+        state["intraday_refresh_cursor"] = intraday_refresh_plan["next_cursor"]
+    if _is_success_status(tactical_data_refresh):
+        state["last_tactical_data_refresh"] = completed.isoformat()
+        state["intraday_refresh_cursor"] = intraday_refresh_plan["next_cursor"]
+    if context_gap_symbols and _is_success_status(active_swing_context_bootstrap):
+        state["last_active_swing_context_bootstrap"] = completed.isoformat()
+    if _is_success_status(active_swing_candidates):
+        state["last_active_swing_candidate_refresh"] = completed.isoformat()
     if _is_success_status(daily):
         state["last_daily_refresh"] = completed.isoformat()
     if _is_success_status(hmm_regime):
@@ -1412,25 +1378,15 @@ def _cycle(
     if _is_success_status(dynamic):
         state["last_dynamic_refresh"] = completed.isoformat()
     if _is_success_status(multitimeframe_watchlist):
-        state["last_multitimeframe_watchlist_refresh"] = (
-            completed.isoformat()
-        )
+        state["last_multitimeframe_watchlist_refresh"] = completed.isoformat()
     if _is_success_status(multitimeframe_pit_observation):
-        state["last_multitimeframe_pit_observation_refresh"] = (
-            completed.isoformat()
-        )
+        state["last_multitimeframe_pit_observation_refresh"] = completed.isoformat()
     if _is_success_status(fast_track_observation):
-        state["last_fast_track_observation_refresh"] = (
-            completed.isoformat()
-        )
+        state["last_fast_track_observation_refresh"] = completed.isoformat()
     if _is_success_status(broad_shadow_observation):
-        state["last_broad_shadow_observation_refresh"] = (
-            completed.isoformat()
-        )
+        state["last_broad_shadow_observation_refresh"] = completed.isoformat()
     if _is_success_status(survivor_shadow_observation):
-        state["last_survivor_shadow_observation_refresh"] = (
-            completed.isoformat()
-        )
+        state["last_survivor_shadow_observation_refresh"] = completed.isoformat()
     if _macro_context_usable(macro):
         state["last_macro_refresh"] = completed.isoformat()
     if _news_context_usable(news_digest):
@@ -1445,14 +1401,33 @@ def _cycle(
         state["last_entry_observer_refresh"] = completed.isoformat()
     if _is_success_status(episode_outcomes):
         state["last_entry_episode_outcomes_refresh"] = completed.isoformat()
+    if _is_success_status(active_swing_sprints):
+        state["last_active_swing_sprints_refresh"] = completed.isoformat()
+    if _is_success_status(portfolio):
+        state["last_portfolio_refresh"] = completed.isoformat()
     if _is_success_status(role_leaderboards):
         state["last_role_leaderboards_refresh"] = completed.isoformat()
     if _is_success_status(p3_evidence):
         state["last_p3_evidence_refresh"] = completed.isoformat()
-    if _is_success_status(reconciliation):
+    if _rl_shadow_usable(rl_shadow):
+        state["last_rl_shadow_refresh"] = completed.isoformat()
+    if _is_success_status(p4_evidence):
+        state["last_p4_evidence_refresh"] = completed.isoformat()
+    if _normalized_status(primary_background) in {
+        "COMPLETED",
+        "ENQUEUED",
+        "RUNNING",
+        "SKIPPED_BUSY",
+    }:
+        state["last_primary_background_refresh"] = completed.isoformat()
+    if _is_success_status(reconciliation) or _reconciliation_read_only_usable(reconciliation):
         state["last_account_reconciliation"] = completed.isoformat()
         state["last_position_check"] = completed.isoformat()
-        state["last_ibkr_status"] = _normalized_status(reconciliation)
+        state["last_ibkr_status"] = (
+            str(reconciliation.get("operational_broker_state_status"))
+            if _reconciliation_read_only_usable(reconciliation)
+            else _normalized_status(reconciliation)
+        )
         state["last_open_positions"] = reconciliation.get(
             "broker_position_count",
             reconciliation.get("position_count"),
@@ -1502,19 +1477,14 @@ def _execution_preflight(
     }
 
 
-def _execution_status(
-    project_root: Path, state: dict[str, Any]
-) -> dict[str, Any]:
+def _execution_status(project_root: Path, state: dict[str, Any]) -> dict[str, Any]:
     phase9 = phase9_status(project_root)
-    paper_ready = (
-        phase9.get("status") == PHASE9_MARKER
-        and all(
-            bool(phase9.get("checks", {}).get(check))
-            for check in (
-                "submit_cancel_canary",
-                "fill_canary",
-                "closing_sell_canary",
-            )
+    paper_ready = phase9.get("status") == PHASE9_MARKER and all(
+        bool(phase9.get("checks", {}).get(check))
+        for check in (
+            "submit_cancel_canary",
+            "fill_canary",
+            "closing_sell_canary",
         )
     )
     mode = str(state.get("mode", "SIGNALS_ONLY"))
@@ -1524,8 +1494,7 @@ def _execution_status(
         if mode == "PAPER_AUTOMATIC" and paper_ready
         else str(live_authority.get("execution_authority"))
         if mode in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"}
-        and live_authority.get("execution_authority")
-        in {LIVE_LEVEL_ONE, AUTONOMOUS_LEVEL_ONE}
+        and live_authority.get("execution_authority") in {LIVE_LEVEL_ONE, AUTONOMOUS_LEVEL_ONE}
         else "NONE"
     )
     return _publish(
@@ -1538,13 +1507,9 @@ def _execution_status(
             "paper_enabled": bool(state.get("paper_enabled")),
             "live_enabled": bool(state.get("live_enabled")),
             "paper_fill_close_canary_go": paper_ready,
-            "paper_reconciliation_go": phase9.get("checks", {}).get(
-                "reconciliation", False
-            ),
+            "paper_reconciliation_go": phase9.get("checks", {}).get("reconciliation", False),
             "execution_authority": authority,
-            "strategy_authority": (
-                "FROZEN_DYNAMIC_ALLOWLIST" if authority != "NONE" else "NONE"
-            ),
+            "strategy_authority": ("FROZEN_DYNAMIC_ALLOWLIST" if authority != "NONE" else "NONE"),
             "paper_limits": PAPER_LIMITS,
             "live_limits": LIVE_LIMITS,
             "margin_enabled": False,
@@ -1561,9 +1526,7 @@ def _execution_status(
 def _effective_mode(state: dict[str, Any], requested: str) -> str:
     if requested == "PAPER_AUTOMATIC" and not state.get("paper_enabled"):
         return "SIGNALS_ONLY"
-    if requested in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"} and not state.get(
-        "live_enabled"
-    ):
+    if requested in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"} and not state.get("live_enabled"):
         return "SIGNALS_ONLY"
     return requested
 
@@ -1575,16 +1538,10 @@ def _machine_status(project_root: Path, state: dict[str, Any]) -> dict[str, Any]
         "machine-status.json",
         {
             "schema": "stocks_machine_status_v1",
-            "status": (
-                "DEGRADED" if last_cycle_status == "DEGRADED" else "GO"
-            ),
+            "status": ("DEGRADED" if last_cycle_status == "DEGRADED" else "GO"),
             **state,
-            "single_instance_lock": str(
-                _private_root(project_root) / "machine.lock"
-            ),
-            "append_only_cycle_log": str(
-                _private_root(project_root) / "cycles.jsonl"
-            ),
+            "single_instance_lock": str(_private_root(project_root) / "machine.lock"),
+            "append_only_cycle_log": str(_private_root(project_root) / "cycles.jsonl"),
         },
     )
 
@@ -1596,9 +1553,7 @@ def _state(project_root: Path) -> dict[str, Any]:
         "enabled": bool(current.get("enabled", False)),
         "paused": bool(current.get("paused", False)),
         "mode": str(current.get("mode", "SIGNALS_ONLY")),
-        "requested_mode": str(
-            current.get("requested_mode", "SIGNALS_ONLY")
-        ),
+        "requested_mode": str(current.get("requested_mode", "SIGNALS_ONLY")),
         "paper_enabled": bool(current.get("paper_enabled", False)),
         "live_enabled": bool(current.get("live_enabled", False)),
         "activated_at": current.get("activated_at"),
@@ -1608,9 +1563,9 @@ def _state(project_root: Path) -> dict[str, Any]:
         "last_cycle_blockers": list(current.get("last_cycle_blockers", [])),
         "cycle_count": int(current.get("cycle_count", 0)),
         "last_data_refresh": current.get("last_data_refresh"),
-        "intraday_refresh_cursor": int(
-            current.get("intraday_refresh_cursor", 0)
-        ),
+        "last_tactical_data_refresh": current.get("last_tactical_data_refresh"),
+        "last_active_swing_candidate_refresh": current.get("last_active_swing_candidate_refresh"),
+        "intraday_refresh_cursor": int(current.get("intraday_refresh_cursor", 0)),
         "last_daily_refresh": current.get("last_daily_refresh"),
         "last_dynamic_refresh": current.get("last_dynamic_refresh"),
         "last_multitimeframe_watchlist_refresh": current.get(
@@ -1619,9 +1574,7 @@ def _state(project_root: Path) -> dict[str, Any]:
         "last_multitimeframe_pit_observation_refresh": current.get(
             "last_multitimeframe_pit_observation_refresh"
         ),
-        "last_fast_track_observation_refresh": current.get(
-            "last_fast_track_observation_refresh"
-        ),
+        "last_fast_track_observation_refresh": current.get("last_fast_track_observation_refresh"),
         "last_broad_shadow_observation_refresh": current.get(
             "last_broad_shadow_observation_refresh"
         ),
@@ -1630,30 +1583,17 @@ def _state(project_root: Path) -> dict[str, Any]:
         ),
         "last_macro_refresh": current.get("last_macro_refresh"),
         "last_news_refresh": current.get("last_news_refresh"),
-        "last_market_context_refresh": current.get(
-            "last_market_context_refresh"
-        ),
-        "last_cot_context_refresh": current.get(
-            "last_cot_context_refresh"
-        ),
-        "last_asset_context_refresh": current.get(
-            "last_asset_context_refresh"
-        ),
-        "last_entry_observer_refresh": current.get(
-            "last_entry_observer_refresh"
-        ),
-        "last_role_leaderboards_refresh": current.get(
-            "last_role_leaderboards_refresh"
-        ),
-        "last_p3_evidence_refresh": current.get(
-            "last_p3_evidence_refresh"
-        ),
-        "last_hmm_regime_refresh": current.get(
-            "last_hmm_regime_refresh"
-        ),
-        "last_account_reconciliation": current.get(
-            "last_account_reconciliation"
-        ),
+        "last_market_context_refresh": current.get("last_market_context_refresh"),
+        "last_cot_context_refresh": current.get("last_cot_context_refresh"),
+        "last_asset_context_refresh": current.get("last_asset_context_refresh"),
+        "last_entry_observer_refresh": current.get("last_entry_observer_refresh"),
+        "last_entry_episode_outcomes_refresh": current.get("last_entry_episode_outcomes_refresh"),
+        "last_active_swing_sprints_refresh": current.get("last_active_swing_sprints_refresh"),
+        "last_portfolio_refresh": current.get("last_portfolio_refresh"),
+        "last_role_leaderboards_refresh": current.get("last_role_leaderboards_refresh"),
+        "last_p3_evidence_refresh": current.get("last_p3_evidence_refresh"),
+        "last_hmm_regime_refresh": current.get("last_hmm_regime_refresh"),
+        "last_account_reconciliation": current.get("last_account_reconciliation"),
         "last_position_check": current.get("last_position_check"),
         "last_ibkr_status": current.get("last_ibkr_status"),
         "last_open_positions": current.get("last_open_positions"),
@@ -1667,13 +1607,31 @@ def _save_state(project_root: Path, state: dict[str, Any]) -> None:
     _atomic_json(path, state)
 
 
+def _cadence_hours(
+    project_root: Path,
+    name: str,
+    fallback: float,
+) -> float:
+    profile = _read_json(project_root / OPERATIONS_PROFILE_PATH)
+    value = profile.get("runtime", {}).get("cadence_hours", {}).get(name, fallback)
+    try:
+        cadence = float(value)
+    except (TypeError, ValueError):
+        cadence = fallback
+    return max(1.0 / 60.0, cadence)
+
+
+def _has_observed_positions(project_root: Path) -> bool:
+    allocation = _read_json(project_root / "output" / "portfolio" / "current_allocation.json")
+    positions = allocation.get("positions", [])
+    return bool(isinstance(positions, list) and positions)
+
+
 def _intraday_refresh_plan(
     project_root: Path,
     state: dict[str, Any],
 ) -> dict[str, Any]:
-    ranking = _read_json(
-        project_root / "output" / "portfolio" / "opportunity_ranking.json"
-    )
+    ranking = _read_json(project_root / "output" / "portfolio" / "opportunity_ranking.json")
     opportunities = ranking.get("opportunities", [])
     core = list(INTRADAY_CORE_SYMBOLS)
     current_allocation = _read_json(
@@ -1684,36 +1642,23 @@ def _intraday_refresh_plan(
         if not isinstance(row, dict):
             continue
         symbol = str(row.get("ticker") or row.get("symbol") or "").strip().upper()
-        if (
-            symbol
-            and len(symbol) <= 20
-            and symbol not in position_symbols
-        ):
+        if symbol and len(symbol) <= 20 and symbol not in position_symbols:
             position_symbols.append(symbol)
-    mandatory_symbols = list(
-        dict.fromkeys([*position_symbols, *core])
-    )
+    mandatory_symbols = list(dict.fromkeys([*position_symbols, *core]))
     mandatory_set = set(mandatory_symbols)
     ranked_symbols: list[str] = []
     for row in opportunities:
         if not isinstance(row, dict):
             continue
         symbol = str(row.get("ticker", "")).strip().upper()
-        if (
-            not symbol
-            or symbol in mandatory_set
-            or symbol in ranked_symbols
-            or len(symbol) > 20
-        ):
+        if not symbol or symbol in mandatory_set or symbol in ranked_symbols or len(symbol) > 20:
             continue
         ranked_symbols.append(symbol)
         if len(ranked_symbols) >= INTRADAY_CHALLENGER_POOL_LIMIT:
             break
     opportunity_pool_count = len(ranked_symbols)
 
-    signal_path = (
-        project_root / "output" / "signals" / "latest_signals.json"
-    )
+    signal_path = project_root / "output" / "signals" / "latest_signals.json"
     try:
         signal_payload = json.loads(signal_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -1732,9 +1677,7 @@ def _intraday_refresh_plan(
         if not isinstance(row, dict):
             continue
         freshness = str(row.get("data_freshness", "")).upper()
-        original_action = str(
-            row.get("original_action") or row.get("action") or ""
-        ).upper()
+        original_action = str(row.get("original_action") or row.get("action") or "").upper()
         refreshable_stale = (
             freshness == "STALE"
             and original_action in {"BUY", "STRONG_BUY", "WATCHLIST"}
@@ -1744,11 +1687,7 @@ def _intraday_refresh_plan(
         if freshness != "FRESH" and not refreshable_stale:
             continue
         symbol = str(row.get("ticker") or row.get("asset") or "").strip().upper()
-        if (
-            not symbol
-            or symbol in mandatory_set
-            or len(symbol) > 20
-        ):
+        if not symbol or symbol in mandatory_set or len(symbol) > 20:
             continue
         expiration = _utc_timestamp(row.get("expiration_timestamp"))
         if expiration is None or expiration < now:
@@ -1757,15 +1696,13 @@ def _intraday_refresh_plan(
             score = float(row.get("confidence_score", 0.0))
         except (TypeError, ValueError):
             score = 0.0
-        signal_candidates[symbol] = max(
-            score, signal_candidates.get(symbol, float("-inf"))
-        )
+        signal_candidates[symbol] = max(score, signal_candidates.get(symbol, float("-inf")))
         if refreshable_stale:
             stale_signal_symbols.add(symbol)
     ranked_signal_symbols = [
         symbol
         for symbol, _score in sorted(
-        signal_candidates.items(), key=lambda item: (-item[1], item[0])
+            signal_candidates.items(), key=lambda item: (-item[1], item[0])
         )
     ]
     priority: list[str] = []
@@ -1802,17 +1739,11 @@ def _intraday_refresh_plan(
             "execution_authority": "NONE",
             "broker_calls": 0,
         }
-    cursor = (
-        int(state.get("intraday_refresh_cursor", 0)) % len(pool)
-        if pool
-        else 0
-    )
+    cursor = int(state.get("intraday_refresh_cursor", 0)) % len(pool) if pool else 0
     batch_size = min(INTRADAY_CHALLENGER_BATCH_SIZE, len(pool))
     challengers = [pool[(cursor + index) % len(pool)] for index in range(batch_size)]
     next_cursor = (cursor + batch_size) % len(pool) if pool else 0
-    remaining = max(
-        0, INTRADAY_COLLECTION_SYMBOL_LIMIT - len(mandatory_symbols)
-    )
+    remaining = max(0, INTRADAY_COLLECTION_SYMBOL_LIMIT - len(mandatory_symbols))
     selected_priority = priority[:remaining]
     remaining -= len(selected_priority)
     selected_challengers = challengers[:remaining]
@@ -1838,9 +1769,7 @@ def _intraday_refresh_plan(
         "cursor": cursor,
         "next_cursor": next_cursor,
         "rotation_status": (
-            "PRIORITY_AND_ROTATING_CHALLENGER_BATCH_GO"
-            if challengers
-            else "PRIORITY_REFRESH_GO"
+            "PRIORITY_AND_ROTATING_CHALLENGER_BATCH_GO" if challengers else "PRIORITY_REFRESH_GO"
         ),
         "execution_authority": "NONE",
         "broker_calls": 0,
@@ -1863,13 +1792,7 @@ def _market_context_symbols(
 
 def _record_daily_performance(project_root: Path) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
-    paper = _read_json(
-        project_root
-        / "output"
-        / "ibkr"
-        / "phase9"
-        / "position-ledger-audit.json"
-    )
+    paper = _read_json(project_root / "output" / "ibkr" / "phase9" / "position-ledger-audit.json")
     projection = paper.get("partial_close_projection", {})
     _add_performance_candidate(
         candidates,
@@ -1881,9 +1804,7 @@ def _record_daily_performance(project_root: Path) -> dict[str, Any]:
         evidence="HISTORICAL_PAPER_PROJECTION",
     )
 
-    live = _read_json(
-        project_root / "output" / "ibkr" / "live" / "performance.json"
-    )
+    live = _read_json(project_root / "output" / "ibkr" / "live" / "performance.json")
     _add_performance_candidate(
         candidates,
         environment="LIVE",
@@ -1946,9 +1867,7 @@ def _add_performance_candidate(
         return
     payload = {
         "schema": "daily_performance_record_v1",
-        "session_date": timestamp.astimezone(
-            ZoneInfo("Europe/Amsterdam")
-        ).date().isoformat(),
+        "session_date": timestamp.astimezone(ZoneInfo("Europe/Amsterdam")).date().isoformat(),
         "observed_at": timestamp.isoformat(),
         "environment": environment,
         "source": source,
@@ -1990,9 +1909,7 @@ def _append_cycle(project_root: Path, record: dict[str, Any]) -> None:
         handle.write(json.dumps(record, sort_keys=True, default=str) + "\n")
 
 
-def _publish(
-    project_root: Path, name: str, payload: dict[str, Any]
-) -> dict[str, Any]:
+def _publish(project_root: Path, name: str, payload: dict[str, Any]) -> dict[str, Any]:
     path = project_root / "output" / "operations" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_json(path, payload)
@@ -2116,12 +2033,14 @@ def _observed_command_step(
     *,
     timeout_seconds: int,
 ) -> dict[str, Any]:
+    started = time.monotonic()
     _cycle_progress(project_root, cycle_id, step_name, "STARTED")
     result = _command_step(
         project_root,
         arguments,
         timeout_seconds=timeout_seconds,
     )
+    result["duration_seconds"] = round(time.monotonic() - started, 6)
     _cycle_progress(
         project_root,
         cycle_id,
@@ -2157,9 +2076,9 @@ def _cycle_progress(
     )
     _runtime_heartbeat(
         project_root,
-        "RUNNING" if step_status != "COMPLETED" or step_name != "CYCLE" else (
-            component_status or "COMPLETED"
-        ),
+        "RUNNING"
+        if step_status != "COMPLETED" or step_name != "CYCLE"
+        else (component_status or "COMPLETED"),
         cycle_id=cycle_id,
         step=step_name,
         step_status=step_status,
@@ -2199,18 +2118,13 @@ def _runtime_heartbeat(
             ),
             "enabled": bool(current.get("enabled", False)),
             "paused": bool(current.get("paused", False)),
-            "requested_mode": str(
-                current.get("requested_mode", "SIGNALS_ONLY")
-            ),
+            "requested_mode": str(current.get("requested_mode", "SIGNALS_ONLY")),
             "cycle_id": cycle_id or current.get("last_cycle_id"),
             "step": step,
             "step_status": step_status,
             "component_status": component_status,
-            "IBKR_status": current.get("last_ibkr_status")
-            or "NOT_YET_OBSERVED",
-            "last_account_reconciliation": current.get(
-                "last_account_reconciliation"
-            ),
+            "IBKR_status": current.get("last_ibkr_status") or "NOT_YET_OBSERVED",
+            "last_account_reconciliation": current.get("last_account_reconciliation"),
             "last_market_data": current.get("last_data_refresh"),
             "last_order_update": None,
             "last_position_check": current.get("last_position_check"),
@@ -2239,10 +2153,57 @@ def _terminate_process_tree(process_id: int) -> bool:
 
 
 def _summary(payload: dict[str, Any]) -> dict[str, Any]:
-    return {
+    summary = {
         "status": _normalized_status(payload),
         "schema": payload.get("schema"),
     }
+    if "duration_seconds" in payload:
+        summary["duration_seconds"] = payload["duration_seconds"]
+    for field in (
+        "background_status",
+        "money_loop_blocked",
+        "resource_priority",
+    ):
+        if field in payload:
+            summary[field] = payload[field]
+    return summary
+
+
+def _delegated_primary(background: dict[str, Any], step_name: str) -> dict[str, Any]:
+    return {
+        "schema": "stocks_primary_step_delegation_v1",
+        "status": "BACKGROUND_DELEGATED",
+        "step_name": step_name,
+        "background_status": _normalized_status(background),
+        "worker_pid": background.get("worker_pid"),
+        "money_loop_blocked": False,
+        "resource_priority": "BELOW_NORMAL",
+        "execution_authority": "NONE",
+        "broker_calls": 0,
+        "broker_writes": 0,
+        "orders_generated": 0,
+    }
+
+
+def _background_refresh_due(payload: dict[str, Any], *, hours: float) -> bool:
+    status = _normalized_status(payload)
+    if status in {"ENQUEUED", "RUNNING"}:
+        return False
+    return _refresh_due(
+        payload.get("completed_at") or payload.get("started_at"),
+        hours=hours,
+    )
+
+
+def _primary_step_due(report: dict[str, Any], step_name: str, *, hours: float) -> bool:
+    steps = report.get("steps")
+    steps = steps if isinstance(steps, dict) else {}
+    step = steps.get(step_name)
+    step = step if isinstance(step, dict) else {}
+    return _refresh_due(
+        step.get("last_attempt_at") or report.get("completed_at"),
+        hours=hours,
+    )
 
 
 def _normalized_status(payload: dict[str, Any]) -> str:
@@ -2252,28 +2213,112 @@ def _normalized_status(payload: dict[str, Any]) -> str:
     return str(status).upper()
 
 
-def _step_blockers(
-    step_name: str, payload: dict[str, Any]
-) -> list[str]:
+def _step_blockers(step_name: str, payload: dict[str, Any]) -> list[str]:
     status = _normalized_status(payload)
+    if _primary_delegation_usable(payload):
+        return []
     if step_name == "MACRO" and _macro_context_usable(payload):
         return []
     if step_name == "NEWS_DIGEST" and _news_context_usable(payload):
         return []
+    if step_name == "RECONCILIATION" and _reconciliation_read_only_usable(payload):
+        return []
     if step_name == "RESEARCH" and _research_data_blocked_expected(payload):
+        return []
+    if step_name == "RESEARCH" and _research_background_usable(payload):
+        return []
+    if step_name == "RL_SHADOW" and _rl_shadow_usable(payload):
+        return []
+    if step_name == "AI_DECISION_INTELLIGENCE" and _ai_shadow_usable(payload):
         return []
     if _is_success_status(payload) or status == "NOT_DUE":
         return []
-    safe_status = "".join(
-        character if character.isalnum() else "_" for character in status
-    ).strip("_")
+    safe_status = "".join(character if character.isalnum() else "_" for character in status).strip(
+        "_"
+    )
     return [f"OPERATIONAL_STEP_{step_name}_{safe_status or 'UNKNOWN'}"]
 
 
 def _is_success_status(payload: dict[str, Any]) -> bool:
     status = _normalized_status(payload)
-    return status == "GO" or (
-        status.endswith("_GO") and not status.endswith("NO_GO")
+    return status == "GO" or (status.endswith("_GO") and not status.endswith("NO_GO"))
+
+
+def _rl_shadow_usable(payload: dict[str, Any]) -> bool:
+    return (
+        _normalized_status(payload) == "SHADOW_ONLY"
+        and str(payload.get("rl_mode", "")).upper() == "SHADOW_ONLY"
+        and payload.get("rl_live_enabled") is False
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
+        and int(payload.get("broker_calls", 0) or 0) == 0
+        and int(payload.get("broker_writes", 0) or 0) == 0
+        and int(payload.get("orders_generated", 0) or 0) == 0
+    )
+
+
+def _ai_shadow_usable(payload: dict[str, Any]) -> bool:
+    return (
+        _normalized_status(payload) in {"ENQUEUED", "COMPLETED", "SKIPPED_FRESH", "SKIPPED_BUSY"}
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
+        and int(payload.get("broker_writes", 0) or 0) == 0
+    )
+
+
+def _research_background_usable(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("schema") == "stocks_background_job_v1"
+        and _normalized_status(payload)
+        in {
+            "ENQUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "SKIPPED_BUSY",
+            "RETRY_BACKOFF",
+        }
+        and payload.get("money_loop_blocked") is False
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
+        and int(payload.get("broker_writes", 0) or 0) == 0
+        and int(payload.get("orders_generated", 0) or 0) == 0
+    )
+
+
+def _primary_delegation_usable(payload: dict[str, Any]) -> bool:
+    return (
+        _normalized_status(payload) == "BACKGROUND_DELEGATED"
+        and payload.get("money_loop_blocked") is False
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
+        and int(payload.get("broker_writes", 0) or 0) == 0
+        and int(payload.get("orders_generated", 0) or 0) == 0
+    )
+
+
+def _reconciliation_read_only_usable(payload: dict[str, Any]) -> bool:
+    if payload.get("schema") != "phase9_reconciliation_audit_v1":
+        return False
+    read_counters = payload.get("read_only_request_counters")
+    write_counters = payload.get("broker_write_counters")
+    if not isinstance(read_counters, dict) or not isinstance(write_counters, dict):
+        return False
+    required_reads = {
+        "read_only_account_summary_requests",
+        "read_only_all_api_open_order_requests",
+        "read_only_execution_requests",
+        "read_only_position_requests",
+        "read_only_same_client_open_order_requests",
+    }
+    return (
+        str(payload.get("broker_observation_status", "")).upper() == "GO"
+        and str(payload.get("broker_snapshot_status", "")).upper() == "BROKER_SNAPSHOT_OBSERVED"
+        and str(payload.get("operational_broker_state_status", "")).upper()
+        == "CURRENT_BROKER_FLAT_READ_ONLY"
+        and int(payload.get("broker_position_count", 0) or 0) == 0
+        and int(payload.get("broker_open_order_count", 0) or 0) == 0
+        and all(int(read_counters.get(name, 0) or 0) >= 1 for name in required_reads)
+        and all(int(value or 0) == 0 for value in write_counters.values())
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
+        and int(payload.get("paper_place_order_calls", 0) or 0) == 0
+        and int(payload.get("live_place_order_calls", 0) or 0) == 0
+        and payload.get("automatic_submission") is False
     )
 
 
@@ -2303,8 +2348,7 @@ def _macro_context_usable(payload: dict[str, Any]) -> bool:
 def _news_context_usable(payload: dict[str, Any]) -> bool:
     if _is_success_status(payload):
         return (
-            str(payload.get("execution_authority", "NONE")).upper()
-            == "NONE"
+            str(payload.get("execution_authority", "NONE")).upper() == "NONE"
             and int(payload.get("broker_calls", 0)) == 0
             and int(payload.get("order_calls", 0)) == 0
             and int(payload.get("orders_generated", 0)) == 0
@@ -2319,11 +2363,8 @@ def _news_context_usable(payload: dict[str, Any]) -> bool:
         and _normalized_status(payload) in {"GO", "PARTIAL"}
         and isinstance(sources, dict)
         and str(sources.get("status", "")).upper() == "GO"
-        and str(digest.get("news_freshness_status", "")).startswith(
-            "CURRENT_"
-        )
-        and str(payload.get("execution_authority", "NONE")).upper()
-        == "NONE"
+        and str(digest.get("news_freshness_status", "")).startswith("CURRENT_")
+        and str(payload.get("execution_authority", "NONE")).upper() == "NONE"
         and int(payload.get("broker_calls", 0)) == 0
         and int(payload.get("orders_generated", 0)) == 0
         and int(digest.get("order_calls", 0)) == 0
@@ -2350,9 +2391,7 @@ def _research_data_blocked_expected(payload: dict[str, Any]) -> bool:
     )
 
 
-def _signal_lifecycle(
-    project_root: Path, dynamic: dict[str, Any]
-) -> dict[str, Any]:
+def _signal_lifecycle(project_root: Path, dynamic: dict[str, Any]) -> dict[str, Any]:
     path = _private_root(project_root) / "signal-states.json"
     previous = _read_json(path).get("states", {})
     current: dict[str, str] = {}
@@ -2368,16 +2407,10 @@ def _signal_lifecycle(
         prior = str(previous.get(key, "NO_SIGNAL")).upper()
         if action in {"BUY", "STRONG_BUY"}:
             lifecycle = (
-                "FRESH_ENTRY"
-                if prior not in {"BUY", "STRONG_BUY"}
-                else "ACTIVE_STATE_NO_NEW_ENTRY"
+                "FRESH_ENTRY" if prior not in {"BUY", "STRONG_BUY"} else "ACTIVE_STATE_NO_NEW_ENTRY"
             )
         elif action in {"SELL", "EXIT"}:
-            lifecycle = (
-                "EXIT"
-                if prior in {"BUY", "STRONG_BUY"}
-                else "NO_SIGNAL"
-            )
+            lifecycle = "EXIT" if prior in {"BUY", "STRONG_BUY"} else "NO_SIGNAL"
         elif action == "REDUCE":
             lifecycle = "REDUCE"
         elif action in {"WATCHLIST", "PENDING"}:
@@ -2404,9 +2437,7 @@ def _signal_lifecycle(
         "schema": "signal_lifecycle_transition_v1",
         "status": "GO",
         "generated_at": _now(),
-        "fresh_entry_count": sum(
-            row["lifecycle_status"] == "FRESH_ENTRY" for row in rows
-        ),
+        "fresh_entry_count": sum(row["lifecycle_status"] == "FRESH_ENTRY" for row in rows),
         "exit_count": sum(row["lifecycle_status"] == "EXIT" for row in rows),
         "rows": rows,
         "execution_authority": "NONE",
@@ -2426,30 +2457,19 @@ def _refresh_due(value: Any, *, hours: int = 6) -> bool:
     return (datetime.now(UTC) - previous).total_seconds() >= hours * 3600
 
 
-def _reconciliation_arguments(
-    project_root: Path, mode: str
-) -> tuple[str, ...]:
+def _reconciliation_arguments(project_root: Path, mode: str) -> tuple[str, ...]:
     if mode in {"LIVE_CANARY_AUTOMATIC", "CONTROLLED_LIVE"}:
         return ("live", "reconcile")
     if mode == "SIGNALS_ONLY":
-        live = _read_json(
-            project_root / "output" / "ibkr" / "live" / "status.json"
-        )
-        if str(live.get("account_reconciliation", "")).startswith(
-            "LIVE_RECONCILED"
-        ):
+        live = _read_json(project_root / "output" / "ibkr" / "live" / "status.json")
+        if str(live.get("account_reconciliation", "")).startswith("LIVE_RECONCILED"):
             return ("live", "reconcile")
     return ("ibkr", "phase9", "reconcile")
 
 
 def _research_due(project_root: Path) -> bool:
     state = _read_json(
-        project_root
-        / "data"
-        / "research"
-        / "autopilot"
-        / "private"
-        / "runtime-state.json"
+        project_root / "data" / "research" / "autopilot" / "private" / "runtime-state.json"
     )
     if not state.get("enabled", False) or state.get("paused", False):
         return False
@@ -2482,12 +2502,8 @@ def _public_manual_position_result(
     status: str,
 ) -> dict[str, Any]:
     ownership = str(position.get("ownership_status", "UNKNOWN"))
-    broker_match = str(
-        position.get("broker_match_status", "UNVERIFIED")
-    )
-    auto_eligible = bool(
-        position.get("automatic_execution_eligible", False)
-    )
+    broker_match = str(position.get("broker_match_status", "UNVERIFIED"))
+    auto_eligible = bool(position.get("automatic_execution_eligible", False))
     return {
         "schema": "manual_tracked_position_transition_v1",
         "status": status,
@@ -2538,9 +2554,7 @@ def _manual_contract_identity(
             if requested_con_id <= 0:
                 return {"status": "INVALID_SIGNAL_CONTRACT_IDENTITY"}
     try:
-        rows = read_contract_cache_rows(
-            ContractCacheLayout.from_project_root(project_root)
-        )
+        rows = read_contract_cache_rows(ContractCacheLayout.from_project_root(project_root))
     except (OSError, ValueError):
         return {"status": "CONTRACT_CACHE_INVALID"}
     matches = [
@@ -2548,10 +2562,7 @@ def _manual_contract_identity(
         for row in rows
         if row.contract.security_type.value == "STK"
         and row.contract.symbol.upper() == ticker
-        and (
-            requested_con_id is None
-            or row.contract.con_id == requested_con_id
-        )
+        and (requested_con_id is None or row.contract.con_id == requested_con_id)
     ]
     if not matches:
         return {

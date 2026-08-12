@@ -33,6 +33,19 @@ OUTPUT_ROOT = Path("output/ai")
 REPORT_PATH = Path("reports/AI_REFERENCE_REPOS_INTEGRATION_REPORT.md")
 REFERENCE_CONFIG = Path("config/ai/reference_patterns_v1.json")
 LEARNING_EVIDENCE = Path("output/portfolio/learning-model-evidence.json")
+GLOBAL_TOURNAMENT = Path("output/ai/decision-intelligence/tournament.json")
+GLOBAL_MANIFEST = Path("output/ai/decision-intelligence/model-manifest.json")
+GLOBAL_INFERENCE = Path("output/ai/decision-intelligence/current-inference.json")
+
+_LEGACY_DAILY_FEATURE_NAMES = {
+    "return_1": "return_1d",
+    "momentum_5": "momentum_5d",
+    "momentum_20": "momentum_20d",
+    "volatility_20": "volatility_20d",
+    "intraday_range": "intraday_range_1d",
+    "drawdown_63": "drawdown_63d",
+    "volume_z_20": "volume_z_20d",
+}
 
 ARTIFACTS = {
     "reference_matrix": "reference-repo-integration-matrix.json",
@@ -93,12 +106,20 @@ def publish_ai_research_plane(project_root: Path) -> dict[str, Any]:
     reference_matrix = _reference_matrix(root)
     feature_registry = _feature_registry()
     learning = _read_json(root / LEARNING_EVIDENCE)
+    global_tournament = _read_json(root / GLOBAL_TOURNAMENT)
+    global_manifest = _read_json(root / GLOBAL_MANIFEST)
+    global_inference = _read_json(root / GLOBAL_INFERENCE)
     models = _model_records(root, learning, now)
+    global_model = _global_model_record(
+        root, global_tournament, global_manifest, global_inference, now
+    )
+    if global_model is not None:
+        models.append(global_model)
     hypotheses = _hypotheses(models, learning, now)
     experiments = _experiments(root, models, hypotheses, learning)
     model_health = _model_health(models, now)
     authority = _authority_matrix(root, models)
-    shadow = _shadow_comparison(root, learning)
+    shadow = _shadow_comparison(root, learning, global_tournament)
     architecture = _architecture_map(root)
     boundary = audit_ai_import_boundary(root / "src/stocks/ai")
     capability_matrix = _capability_matrix(root)
@@ -210,7 +231,13 @@ def publish_ai_research_plane(project_root: Path) -> dict[str, Any]:
         "model_count": len(models),
         "feature_count": len(feature_registry),
         "experiment_count": len(experiments),
-        "financial_validation_status": "NO_INCREMENTAL_EVIDENCE",
+        "financial_validation_status": global_tournament.get(
+            "promotion_status", "NO_INCREMENTAL_EVIDENCE"
+        ),
+        "global_oos_observations": int(global_tournament.get("oos_rows", 0)),
+        "global_current_evidence_count": int(
+            global_inference.get("evidence_count", 0)
+        ),
         "deterministic_fallback": True,
         "ai_money_control": False,
         "direct_broker_access": False,
@@ -262,9 +289,9 @@ def load_ai_research_plane_status(project_root: Path) -> dict[str, Any]:
 def _architecture_map(root: Path) -> dict[str, Any]:
     stages = [
         ("data", "src/stocks/quant_platform/data.py", "EXISTS_AND_STRONG"),
-        ("features", "src/stocks/portfolio/learning_integration.py", "EXISTS_BUT_WEAK"),
+        ("features", "src/stocks/ai/panel.py", "EXISTS_AND_STRONG"),
         ("research", "src/stocks/research/autopilot", "EXISTS_AND_STRONG"),
-        ("model_evidence", LEARNING_EVIDENCE.as_posix(), "EXISTS_BUT_WEAK"),
+        ("model_evidence", GLOBAL_TOURNAMENT.as_posix(), "EXISTS_AND_STRONG"),
         ("strategies", "src/stocks/research/registry_service.py", "EXISTS_AND_STRONG"),
         ("ranking", "src/stocks/portfolio/opportunities.py", "EXISTS_AND_STRONG"),
         ("portfolio", "src/stocks/portfolio/manager.py", "EXISTS_AND_STRONG"),
@@ -392,13 +419,13 @@ def _feature_registry() -> list[FeatureDefinition]:
         "feature_version": "1",
     }
     specs = [
-        ("return_1", "1_CLOSED_SESSION", "NONE"),
-        ("momentum_5", "5_CLOSED_SESSIONS", "NONE"),
-        ("momentum_20", "20_CLOSED_SESSIONS", "NONE"),
-        ("volatility_20", "20_CLOSED_SESSIONS", "ROLLING_STANDARD_DEVIATION"),
-        ("intraday_range", "1_CLOSED_SESSION", "PRICE_NORMALIZED"),
-        ("drawdown_63", "63_CLOSED_SESSIONS", "ROLLING_PEAK"),
-        ("volume_z_20", "20_CLOSED_SESSIONS", "ROLLING_Z_SCORE_TRAIN_ONLY"),
+        ("return_1d", "1_CLOSED_DAILY_SESSION", "NONE"),
+        ("momentum_5d", "5_CLOSED_DAILY_SESSIONS", "NONE"),
+        ("momentum_20d", "20_CLOSED_DAILY_SESSIONS", "NONE"),
+        ("volatility_20d", "20_CLOSED_DAILY_SESSIONS", "ROLLING_STANDARD_DEVIATION"),
+        ("intraday_range_1d", "1_CLOSED_DAILY_SESSION", "PRICE_NORMALIZED"),
+        ("drawdown_63d", "63_CLOSED_DAILY_SESSIONS", "ROLLING_PEAK"),
+        ("volume_z_20d", "20_CLOSED_DAILY_SESSIONS", "ROLLING_Z_SCORE_TRAIN_ONLY"),
         ("news_sentiment", "EVENT", "BOUNDED_MINUS_ONE_TO_ONE"),
         ("news_uncertainty", "EVENT", "BOUNDED_ZERO_TO_ONE"),
         ("news_novelty", "EVENT", "BOUNDED_ZERO_TO_ONE"),
@@ -446,17 +473,21 @@ def _model_records(
         source = str(symbol_row.get("data_source"))
         source_hash = evidence.get("source_hashes", {}).get(source, "MISSING")
         cutoff = str(symbol_row.get("trained_through", "UNRECORDED"))
-        features = tuple(
+        raw_features = (
             symbol_row.get("supervised", {}).get("report", {}).get("features", [])
             or (
-                "return_1",
-                "momentum_5",
-                "momentum_20",
-                "volatility_20",
-                "intraday_range",
-                "drawdown_63",
-                "volume_z_20",
+                "return_1d",
+                "momentum_5d",
+                "momentum_20d",
+                "volatility_20d",
+                "intraday_range_1d",
+                "drawdown_63d",
+                "volume_z_20d",
             )
+        )
+        features = tuple(
+            _LEGACY_DAILY_FEATURE_NAMES.get(str(name), str(name))
+            for name in raw_features
         )
         for family, key in (
             ("SUPERVISED_LOGISTIC", "supervised"),
@@ -580,6 +611,86 @@ def _model_records(
     return models
 
 
+def _global_model_record(
+    root: Path,
+    tournament: dict[str, Any],
+    manifest: dict[str, Any],
+    inference: dict[str, Any],
+    now: datetime,
+) -> ModelRecord | None:
+    if not tournament or not manifest:
+        return None
+    created = _timestamp(manifest.get("generated_at")) or now
+    promotion = str(tournament.get("promotion_status") or "NOT_EVALUATED")
+    symbols = tuple(
+        sorted(
+            {
+                str(row.get("symbol"))
+                for row in inference.get("model_evidence", [])
+                if row.get("symbol")
+            }
+        )
+    )
+    classifier = str(manifest.get("classifier_family") or "UNKNOWN")
+    regressor = str(manifest.get("regressor_family") or "UNKNOWN")
+    return ModelRecord(
+        model_id="GLOBAL-DECISION-INTELLIGENCE-V1",
+        family=f"{classifier}+{regressor}",
+        version=str(manifest.get("model_version") or "UNKNOWN"),
+        feature_set=(
+            "causal_price_momentum",
+            "causal_volatility",
+            "causal_liquidity",
+            "cross_sectional_ranks",
+            "strategy_identity",
+            "regime_context",
+            "estimated_round_trip_cost",
+        ),
+        target="NATIVE_EXIT_NET_RETURN_AND_POSITIVE_NET_TRADE",
+        training_interval="EXPANDING_PURGED_WALK_FORWARD",
+        validation_interval="INNER_TEMPORAL_VALIDATION_CALIBRATION_ONLY",
+        test_interval=f"THREE_OUTER_OOS_FOLDS:{tournament.get('oos_rows', 0)}_ROWS",
+        forward_interval="NOT_AVAILABLE",
+        universe=symbols,
+        horizon="NATIVE_EXIT_PLUS_1_3_5_10_20_SESSION_LABELS",
+        regime_scope="ALL_OBSERVED_REGIMES_WITHOUT_UNSEEN_REGIME_PROOF",
+        data_hash=str(manifest.get("panel_hash") or "MISSING"),
+        code_hash=canonical_hash(
+            {
+                "panel": _sha256_file(root / "src/stocks/ai/panel.py"),
+                "modeling": _sha256_file(root / "src/stocks/ai/modeling.py"),
+            }
+        ),
+        hyperparameters={
+            "classifier_family": classifier,
+            "regressor_family": regressor,
+            "outer_fold_count": tournament.get("outer_fold_count"),
+            "selection": "VALIDATION_ONLY",
+        },
+        metrics=tournament.get("same_period_comparison", {}),
+        calibration={
+            "method": "PLATT_ON_VALIDATION_ONLY",
+            "test_rows_used_for_calibration": 0,
+        },
+        drift_limits={
+            "feature": 0.20,
+            "prediction": 0.20,
+            "calibration": 0.05,
+            "performance": 0.20,
+            "regime": 0.25,
+        },
+        authority=AIAuthority.SHADOW_ONLY,
+        lifecycle=(
+            ModelLifecycle.SHADOW
+            if promotion == "SHADOW_VALIDATION_GO"
+            else ModelLifecycle.PAUSED
+        ),
+        created_at=created,
+        expires_at=created + timedelta(days=7),
+        incremental_evidence=promotion,
+    )
+
+
 def _hypotheses(
     models: list[ModelRecord],
     evidence: dict[str, Any],
@@ -615,7 +726,13 @@ def _experiments(
     evidence: dict[str, Any],
 ) -> list[ExperimentRecord]:
     records = []
+    selection_count = max(1, len(models))
     for model, hypothesis in zip(models, hypotheses, strict=True):
+        result_artifact = (
+            GLOBAL_TOURNAMENT.as_posix()
+            if model.model_id == "GLOBAL-DECISION-INTELLIGENCE-V1"
+            else LEARNING_EVIDENCE.as_posix()
+        )
         core = {
             "contract_version": "ai_experiment_record_v1_schema_version_field",
             "hypothesis_id": hypothesis.hypothesis_id,
@@ -624,6 +741,8 @@ def _experiments(
             "parameters": model.hyperparameters,
             "seed": 42,
             "cost_model": "SHARED_TRANSACTION_COST_MODEL_V1",
+            "hypothesis_count_at_selection": selection_count,
+            "result_artifact": result_artifact,
         }
         record = ExperimentRecord(
             experiment_id=f"EXP-{canonical_hash(core)[:20]}",
@@ -634,11 +753,11 @@ def _experiments(
             parameters=model.hyperparameters,
             seed=42,
             transaction_cost_model_version="SHARED_TRANSACTION_COST_MODEL_V1",
-            result_artifact=LEARNING_EVIDENCE.as_posix(),
+            result_artifact=result_artifact,
             decision=ExperimentStatus.FAILED,
-            hypothesis_count_at_selection=max(1, len(models)),
+            hypothesis_count_at_selection=selection_count,
             multiple_testing=multiple_testing_penalty(
-                0.0, hypothesis_count=max(1, len(models))
+                0.0, hypothesis_count=selection_count
             ),
         )
         write_immutable_experiment(root, record)
@@ -741,6 +860,7 @@ def _authority_matrix(
 def _shadow_comparison(
     root: Path,
     learning: dict[str, Any],
+    global_tournament: dict[str, Any],
 ) -> dict[str, Any]:
     deterministic = _read_json(
         root / "output/research/p1/independent-performance-check.json"
@@ -756,6 +876,11 @@ def _shadow_comparison(
             learning.get("portfolio_rl", {})
             .get("report", {})
             .get("temporal_holdout_validation"),
+        ),
+        (
+            "F",
+            "GLOBAL_CAUSAL_MODEL_META_LABEL_AND_RANKING",
+            global_tournament.get("same_period_comparison"),
         ),
     ]
     metrics = (
@@ -782,10 +907,12 @@ def _shadow_comparison(
                 "variant": key,
                 "name": name,
                 "metrics": evidence,
-                "comparable_period": False,
+                "comparable_period": key == "F" and bool(evidence),
                 "status": (
                     "BASELINE_ONLY_NOT_COMPARABLE"
                     if key == "A"
+                    else str(global_tournament.get("promotion_status"))
+                    if key == "F" and evidence
                     else "NO_INCREMENTAL_EVIDENCE"
                 ),
                 "authority": "NATIVE_DETERMINISTIC"
@@ -796,11 +923,22 @@ def _shadow_comparison(
         )
     return {
         "schema": "ai_shadow_portfolio_comparison_v1",
-        "status": "NO_INCREMENTAL_EVIDENCE",
+        "status": global_tournament.get(
+            "promotion_status", "NO_INCREMENTAL_EVIDENCE"
+        ),
         "required_metrics": list(metrics),
         "variants": rows,
-        "comparison_valid": False,
-        "reason": "NO_SAME_PERIOD_FORWARD_NET_OF_COST_SHADOW_RETURN_SERIES",
+        "comparison_valid": bool(global_tournament.get("oos_rows")),
+        "historical_same_period_oos_valid": bool(
+            global_tournament.get("oos_rows")
+        ),
+        "forward_comparison_valid": False,
+        "selection_conditioned_history": True,
+        "reason": (
+            "HISTORICAL_OOS_COMPARISON_REJECTED_FORWARD_EVIDENCE_REQUIRED"
+            if global_tournament
+            else "NO_SAME_PERIOD_FORWARD_NET_OF_COST_SHADOW_RETURN_SERIES"
+        ),
         "deterministic_fallback": True,
         "cash_is_valid_result": True,
         "automatic_promotion": False,

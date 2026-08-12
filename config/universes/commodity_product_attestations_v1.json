@@ -1,0 +1,91 @@
+{
+  "schema": "commodity_product_attestations_v1",
+  "methodology": "OFFICIAL_ISSUER_STRUCTURE_EVIDENCE_ONLY;SHARIAH_NOT_INFERRED",
+  "attestations": [
+    {
+      "symbol": "GLD",
+      "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://www.spdrgoldshares.com/media/GLD/file/GLD_Key_Info.pdf"]
+    },
+    {
+      "symbol": "IAU",
+      "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://www.ishares.com/us/products/239561/ishares-gold-trust"]
+    },
+    {
+      "symbol": "SLV",
+      "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://www.ishares.com/us/products/239855/SLV"]
+    },
+    {
+      "symbol": "PPLT",
+      "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://www.aberdeeninvestments.com/en-us/investor/funds/view-all-funds/abrdn-physical-platinum-shares-etf-us0032601066"]
+    },
+    {
+      "symbol": "PALL",
+      "product_structure": "PHYSICAL_BACKED_GRANTOR_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://www.aberdeeninvestments.com/en-us/investor/funds/view-all-funds/-us0032621023"]
+    },
+    {
+      "symbol": "SPPP",
+      "product_structure": "PHYSICAL_CLOSED_END_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://sprott.com/investment-strategies/exchange-listed-products/physical-bullion-funds/platinum-and-palladium/"]
+    },
+    {
+      "symbol": "SCOP",
+      "product_structure": "PHYSICAL_CLOSED_END_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://sprott.com/investment-strategies/exchange-listed-products/physical-commodity-funds/copper/"]
+    },
+    {
+      "symbol": "U-UN.TO",
+      "product_structure": "PHYSICAL_CLOSED_END_TRUST",
+      "commodity_exposure_type": "PHYSICAL_COMMODITY",
+      "structure_status": "VERIFIED_PHYSICAL_STRUCTURE",
+      "shariah_product_status": "ATTESTATION_REQUIRED",
+      "screened_at": "2026-08-11T23:47:00Z",
+      "expires_at": "2026-09-11T23:59:59Z",
+      "sources": ["https://sprott.com/investment-strategies/exchange-listed-products/physical-commodity-funds/uranium/"]
+    }
+  ],
+  "authority": {
+    "strategy_authority": "NONE",
+    "execution_authority": "NONE",
+    "automatic_orders": 0
+  }
+}

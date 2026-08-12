@@ -22,6 +22,7 @@ from stocks.quant_platform.regime import StatisticalRegimeDetector
 
 
 EVIDENCE_PATH = Path("output/portfolio/learning-model-evidence.json")
+GLOBAL_EVIDENCE_PATH = Path("output/ai/decision-intelligence/current-inference.json")
 MODEL_ROOT = Path("output/portfolio/models")
 LEARNING_ROLES = {
     "supervised": {"capability_id": 17, "authority": "SHADOW_ONLY"},
@@ -70,7 +71,8 @@ def train_shadow_learning_models(
                 epochs=90, random_state=42, splits=3
             ).fit(x, pd.Series(y, index=sequence_index))
             regime_features = features.loc[
-                :, ["momentum_20", "volatility_20", "drawdown_63", "volume_z_20"]
+                :,
+                ["momentum_20d", "volatility_20d", "drawdown_63d", "volume_z_20d"],
             ]
             regime_train = regime_features.iloc[: int(len(regime_features) * 0.8)]
             regime = StatisticalRegimeDetector(
@@ -242,6 +244,11 @@ def integrate_learning_evidence(
         for row in raw.get("symbol_predictions", [])
         if row.get("symbol")
     }
+    global_predictions = {
+        str(row.get("symbol") or "").upper(): row
+        for row in raw.get("global_model_evidence", [])
+        if row.get("symbol")
+    }
     capabilities = {
         int(row.get("id", 0)): str(row.get("authority") or row.get("role") or "")
         for row in capability_authority.get("capabilities", [])
@@ -256,7 +263,8 @@ def integrate_learning_evidence(
     for row in opportunities:
         symbol = str(row.get("symbol") or "").upper()
         prediction = predictions.get(symbol)
-        if prediction:
+        global_prediction = global_predictions.get(symbol)
+        if prediction or global_prediction:
             covered += 1
         overlay = {
             "schema": "learning_counterfactual_overlay_v1",
@@ -292,6 +300,15 @@ def integrate_learning_evidence(
             "rl_counterfactual_weight": raw.get(
                 "rl_counterfactual_target_weights", {}
             ).get(symbol),
+            "global_model_evidence": global_prediction,
+            "global_model_validation_status": (
+                (global_prediction or {}).get("validation_status")
+            ),
+            "global_model_meta_take": (global_prediction or {}).get("meta_take"),
+            "global_model_abstained": (global_prediction or {}).get("abstained"),
+            "global_model_out_of_distribution": (
+                (global_prediction or {}).get("out_of_distribution")
+            ),
             "authority_contract_go": contract_go,
             "financial_fields_mutated": False,
             "may_grant_strategy_authority": False,
@@ -321,7 +338,20 @@ def integrate_learning_evidence(
 
 
 def load_learning_evidence(project_root: Path) -> dict[str, Any]:
-    return _read_json(project_root / EVIDENCE_PATH)
+    legacy = _read_json(project_root / EVIDENCE_PATH)
+    global_evidence = _read_json(project_root / GLOBAL_EVIDENCE_PATH)
+    if not global_evidence:
+        return legacy
+    merged = dict(legacy)
+    merged["global_model_evidence"] = global_evidence.get("model_evidence", [])
+    merged["global_model_version"] = global_evidence.get("model_version")
+    merged["global_model_promotion_status"] = global_evidence.get(
+        "promotion_status"
+    )
+    merged["global_model_tournament_hash"] = global_evidence.get(
+        "tournament_hash"
+    )
+    return merged
 
 
 def _price_frame(path: Path) -> pd.DataFrame:
@@ -344,13 +374,13 @@ def _features_and_target(
     volume_log = np.log1p(frame["volume"])
     features = pd.DataFrame(
         {
-            "return_1": returns,
-            "momentum_5": close.pct_change(5),
-            "momentum_20": close.pct_change(20),
-            "volatility_20": returns.rolling(20).std(ddof=0),
-            "intraday_range": (frame["high"] - frame["low"]) / close,
-            "drawdown_63": close / close.rolling(63).max() - 1.0,
-            "volume_z_20": (
+            "return_1d": returns,
+            "momentum_5d": close.pct_change(5),
+            "momentum_20d": close.pct_change(20),
+            "volatility_20d": returns.rolling(20).std(ddof=0),
+            "intraday_range_1d": (frame["high"] - frame["low"]) / close,
+            "drawdown_63d": close / close.rolling(63).max() - 1.0,
+            "volume_z_20d": (
                 volume_log - volume_log.rolling(20).mean()
             )
             / volume_log.rolling(20).std(ddof=0),

@@ -1,0 +1,47 @@
+{
+  "schema": "active_swing_15m_candidate_hypotheses_v1",
+  "status": "ACTIVE_RESEARCH_SHADOW_ONLY",
+  "version": "1.0.0",
+  "candidate_unit": "ONE_NATURAL_STRATEGY_SETUP",
+  "entry_timeframe": "15m",
+  "setup_timeframe": "1h",
+  "required_timeframes": ["15m", "1h", "4h"],
+  "optional_timeframes": ["1d"],
+  "session": "RTH",
+  "maximum_trigger_age_bars": 16,
+  "maximum_trigger_age_minutes": 240,
+  "near_setup_atr_fraction": 0.5,
+  "maximum_near_setup_age_bars": 64,
+  "higher_timeframe_policy": "CAUSAL_CONTEXT_NOT_MANDATORY_CONSENSUS",
+  "negative_sampling_policy": "CANDIDATE_CONDITIONED_ONLY",
+  "hypotheses": [
+    {
+      "strategy_id": "ACTIVE-SWING-15M-BREAKOUT-V1",
+      "family": "volatility_contraction_breakout",
+      "trigger": "CLOSE_BREAKS_PRIOR_20_BAR_HIGH",
+      "channel_bars": 20,
+      "atr_bars": 14,
+      "stop_atr": 2.0,
+      "target_1_r": 1.5,
+      "target_2_r": 2.5
+    },
+    {
+      "strategy_id": "ACTIVE-SWING-15M-PULLBACK-RESUMPTION-V1",
+      "family": "trend_pullback",
+      "trigger": "CLOSE_RECLAIMS_EMA20_IN_EMA20_ABOVE_EMA50_TREND",
+      "fast_ema": 20,
+      "slow_ema": 50,
+      "atr_bars": 14,
+      "stop_atr": 2.0,
+      "target_1_r": 1.5,
+      "target_2_r": 2.5
+    }
+  ],
+  "qualification_status": "UNQUALIFIED_FORWARD_OBSERVER",
+  "calibrated_probability": false,
+  "financial_finalist": false,
+  "portfolio_eligible": false,
+  "strategy_authority": "NONE",
+  "execution_authority": "NONE",
+  "automatic_execution_allowed": false
+}

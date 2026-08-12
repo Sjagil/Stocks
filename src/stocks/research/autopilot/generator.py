@@ -24,8 +24,8 @@ HYPOTHESES = {
         "momentum and a positive long-term trend tend to persist."
     ),
     StrategyFamily.TREND_PULLBACK: (
-        "A bounded pullback toward a medium EMA inside confirmed daily and weekly "
-        "uptrends offers a better swing entry than chasing an extended move."
+        "A bounded pullback toward a medium EMA inside a confirmed higher-timeframe "
+        "uptrend offers a better swing entry than chasing an extended move."
     ),
     StrategyFamily.ETF_ROTATION: (
         "Liquid ordinary ETFs with superior medium-term relative strength and a "
@@ -41,9 +41,7 @@ HYPOTHESES = {
     ),
 }
 
-FAMILY_PARAMETER_BOUNDS: dict[
-    StrategyFamily, dict[str, tuple[float, float] | type]
-] = {
+FAMILY_PARAMETER_BOUNDS: dict[StrategyFamily, dict[str, tuple[float, float] | type]] = {
     StrategyFamily.QUALITY_MOMENTUM: {
         "top_n": (5, 25),
         "ema_period": (100, 300),
@@ -86,14 +84,8 @@ def generate_strategies(
 ) -> list[StrategySpec]:
     budgets.validate()
     if budget <= 0 or budget > budgets.max_new_strategies_per_day:
-        raise ValueError(
-            f"budget must be in [1,{budgets.max_new_strategies_per_day}]"
-        )
-    families = (
-        [StrategyFamily(family)]
-        if family is not None
-        else list(StrategyFamily)
-    )
+        raise ValueError(f"budget must be in [1,{budgets.max_new_strategies_per_day}]")
+    families = [StrategyFamily(family)] if family is not None else list(StrategyFamily)
     candidates: list[StrategySpec] = []
     for selected_family in families:
         variants = list(_family_variants(selected_family, seed=seed))
@@ -143,15 +135,11 @@ def validate_strategy(strategy: StrategySpec) -> None:
     if strategy.confirmation_timeframe:
         for name in strategy.confirmation_components:
             if strategy.confirmation_timeframe not in registry[name].supported_timeframes:
-                raise ValueError(
-                    f"INCOMPATIBLE_TIMEFRAME:{name}:{strategy.confirmation_timeframe}"
-                )
+                raise ValueError(f"INCOMPATIBLE_TIMEFRAME:{name}:{strategy.confirmation_timeframe}")
     if strategy.regime_timeframe:
         for name in strategy.regime_components:
             if strategy.regime_timeframe not in registry[name].supported_timeframes:
-                raise ValueError(
-                    f"INCOMPATIBLE_TIMEFRAME:{name}:{strategy.regime_timeframe}"
-                )
+                raise ValueError(f"INCOMPATIBLE_TIMEFRAME:{name}:{strategy.regime_timeframe}")
     if StrategyFamily(strategy.family) == StrategyFamily.TREND_PULLBACK and (
         "benchmark_trend" not in strategy.regime_components
     ):
@@ -210,9 +198,7 @@ def generate_macro_variant(
     payload = strategy.core_payload()
     payload.update(
         {
-            "regime_components": tuple(
-                dict.fromkeys((*retained_non_macro, *macro_filters))
-            ),
+            "regime_components": tuple(dict.fromkeys((*retained_non_macro, *macro_filters))),
             "hypothesis": (
                 f"{strategy.hypothesis} Macrofilters beperken blootstelling "
                 "alleen wanneer point-in-time context dit bevestigt."
@@ -255,8 +241,7 @@ def _validate_parameters(strategy: StrategySpec) -> None:
         if not contract[0] <= float(value) <= contract[1]:
             raise ValueError(f"PARAMETER_OUT_OF_BOUNDS:{name}")
     if family == StrategyFamily.VOLATILITY_CONTRACTION_BREAKOUT and (
-        float(strategy.parameters["vol_short"])
-        >= float(strategy.parameters["vol_long"])
+        float(strategy.parameters["vol_short"]) >= float(strategy.parameters["vol_long"])
     ):
         raise ValueError("PARAMETER_RELATION_VIOLATION:vol_short<vol_long")
     if family == StrategyFamily.COMMODITY_ETF_TREND and (
@@ -301,12 +286,39 @@ def _family_variants(
                 confirmations=("price_above_ma",),
                 regimes=("benchmark_trend",),
                 exits=("ranking_exit", "fundamental_eligibility_exit", "rebalance_exit"),
-                sizing="equal_weight_sizing" if model == "equal_weight" else "inverse_volatility_sizing",
-                parameters={"top_n": top_n, "ema_period": 200, "momentum_6m": 126, "momentum_12m": 252},
+                sizing="equal_weight_sizing"
+                if model == "equal_weight"
+                else "inverse_volatility_sizing",
+                parameters={
+                    "top_n": top_n,
+                    "ema_period": 200,
+                    "momentum_6m": 126,
+                    "momentum_12m": 252,
+                },
                 portfolio_model=model,
                 rebalance="MONTHLY",
             )
     elif family == StrategyFamily.TREND_PULLBACK:
+        yield _build(
+            family,
+            seed,
+            entry_timeframe="15m",
+            confirmation_timeframe="1h",
+            regime_timeframe="4h",
+            entries=("ema_pullback",),
+            confirmations=("ma_alignment", "relative_volume", "rate_of_change"),
+            regimes=("benchmark_trend",),
+            exits=("atr_trailing_exit", "time_stop"),
+            sizing="volatility_adjusted_sizing",
+            parameters={
+                "pullback_ema": 20,
+                "tolerance": 0.05,
+                "atr_multiple": 3.0,
+                "max_hold": 30,
+            },
+            portfolio_model="capped_risk_adjusted",
+            rebalance="EACH_ELIGIBLE_15M_CLOSE",
+        )
         for timeframe, ema, exit_name in itertools.product(
             ("1h", "4h"),
             (20, 50),
@@ -323,7 +335,12 @@ def _family_variants(
                 regimes=("benchmark_trend",),
                 exits=(exit_name, "time_stop"),
                 sizing="volatility_adjusted_sizing",
-                parameters={"pullback_ema": ema, "tolerance": 0.05, "atr_multiple": 3.0, "max_hold": 30},
+                parameters={
+                    "pullback_ema": ema,
+                    "tolerance": 0.05,
+                    "atr_multiple": 3.0,
+                    "max_hold": 30,
+                },
                 portfolio_model="capped_risk_adjusted",
                 rebalance="DAILY_AFTER_CLOSE",
             )
@@ -345,6 +362,27 @@ def _family_variants(
                 rebalance=rebalance,
             )
     elif family == StrategyFamily.VOLATILITY_CONTRACTION_BREAKOUT:
+        yield _build(
+            family,
+            seed,
+            entry_timeframe="15m",
+            confirmation_timeframe="1h",
+            regime_timeframe="4h",
+            entries=("volatility_contraction", "donchian_breakout"),
+            confirmations=("volume_confirmation", "ma_alignment"),
+            regimes=("benchmark_trend",),
+            exits=("atr_trailing_exit", "time_stop"),
+            sizing="volatility_adjusted_sizing",
+            parameters={
+                "breakout_period": 20,
+                "vol_short": 10,
+                "vol_long": 60,
+                "contraction": 0.65,
+                "atr_multiple": 3.0,
+            },
+            portfolio_model="capped_risk_adjusted",
+            rebalance="EACH_ELIGIBLE_15M_CLOSE",
+        )
         for timeframe, breakout in itertools.product(("4h", "1d"), (20, 55)):
             yield _build(
                 family,
@@ -357,7 +395,13 @@ def _family_variants(
                 regimes=("benchmark_trend",),
                 exits=("atr_trailing_exit", "time_stop"),
                 sizing="volatility_adjusted_sizing",
-                parameters={"breakout_period": breakout, "vol_short": 10, "vol_long": 60, "contraction": 0.65, "atr_multiple": 3.0},
+                parameters={
+                    "breakout_period": breakout,
+                    "vol_short": 10,
+                    "vol_long": 60,
+                    "contraction": 0.65,
+                    "atr_multiple": 3.0,
+                },
                 portfolio_model="capped_risk_adjusted",
                 rebalance="DAILY_AFTER_CLOSE",
             )

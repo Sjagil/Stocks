@@ -4,16 +4,18 @@ import json
 import math
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import pandas as pd
 
+from stocks.context.candidate_evidence import candidate_evidence_classification
 from stocks.execution.idempotency import stable_hash
 from stocks.microstructure.orderflow import (
     aggregate_trade_flow,
     classify_trades,
     orderbook_metrics,
 )
+from stocks.portfolio.swing import StrategyTimeframeContract
 from stocks.research.sec_overlay import sec_overlays_for_signals
 from stocks.signals.freshness import signal_is_current
 from stocks.universe import broad_asset_metadata
@@ -67,7 +69,16 @@ def observe_shortlist(
     if not 0 <= int(depth_symbols) <= int(max_symbols):
         raise ValueError("depth_symbols must be between 0 and max_symbols")
     now = _utc(observed_at or datetime.now(UTC))
-    signals = _read_json(project_root / "output/signals/latest_signals.json")
+    canonical_signals = _read_json(
+        project_root / "output/signals/latest_signals.json"
+    )
+    tactical_signals = _read_json(
+        project_root / "output/signals/active_swing_15m_signals.json"
+    )
+    signal_rows = _combined_signal_rows(
+        canonical_signals.get("signals", []),
+        tactical_signals.get("signals", []),
+    )
     market_regime = str(
         _read_json(project_root / "output/dynamic/current_regime.json").get(
             "regime", "UNKNOWN"
@@ -82,7 +93,7 @@ def observe_shortlist(
         if isinstance(row, dict) and row.get("symbol")
     }
     asset_metadata = broad_asset_metadata(project_root)
-    candidate_rows = _candidate_signals(signals.get("signals", []))
+    candidate_rows = _candidate_signals(signal_rows)
     selected = _select_signals(candidate_rows, now=now, limit=max_symbols)
     sec_overlays = _sec_ranking_overlays(
         project_root,
@@ -136,13 +147,37 @@ def observe_shortlist(
         contract_snapshot = decision["contract_identity"]
         gates = decision["gates"]
         state = _state(decision, tape=tape, depth=depth)
+        observation_identity = _signal_candidate_identity(signal)
+        evidence_classification = candidate_evidence_classification(signal)
+        candidate_identity = (
+            observation_identity
+            if evidence_classification["natural_strategy_candidate"]
+            else None
+        )
+        timeframe_contract = signal.get("strategy_timeframe_contract")
+        timeframe_contract = (
+            timeframe_contract if isinstance(timeframe_contract, dict) else {}
+        )
         observation = {
             "schema": "active_swing_forward_episode_v1",
             "iteration_rank": rank,
             "symbol": symbol,
             "signal_id": signal.get("signal_id"),
             "strategy_id": signal.get("strategy_id"),
+            "strategy_dna_hash": signal.get("strategy_dna_hash"),
+            "strategy_family": decision["strategy_family"],
+            "model_version": decision["model_version"],
+            "entry_timeframe": timeframe_contract.get("entry_timeframe"),
+            "setup_timeframe": timeframe_contract.get("setup_timeframe"),
+            "context_timeframes": timeframe_contract.get("context_timeframes", []),
+            "setup_id": signal.get("setup_id"),
+            "candidate_identity": candidate_identity,
+            "observation_identity": observation_identity,
+            **evidence_classification,
             "timeframe": signal.get("timeframe"),
+            "setup_origin_timestamp": signal.get(
+                "setup_origin_timestamp"
+            ),
             "signal_timestamp": signal.get("signal_timestamp"),
             "data_cutoff_timestamp": signal.get("data_timestamp"),
             "observed_at": now.isoformat(),
@@ -177,6 +212,18 @@ def observe_shortlist(
                 "reward_risk_1": signal.get("reward_risk_1"),
                 "estimated_transaction_costs_eur": signal.get(
                     "estimated_transaction_costs_eur"
+                ),
+                "candidate_unit": signal.get("candidate_unit"),
+                "strategy_dna_hash": signal.get("strategy_dna_hash"),
+                "negative_sampling_policy": signal.get(
+                    "negative_sampling_policy"
+                ),
+                "strategy_timeframe_contract": signal.get(
+                    "strategy_timeframe_contract"
+                ),
+                "timeframe_evidence": signal.get("timeframe_evidence"),
+                "timeframe_evidence_hash": signal.get(
+                    "timeframe_evidence_hash"
                 ),
                 "market_reference_age_minutes": signal.get(
                     "market_reference_age_minutes"
@@ -232,19 +279,17 @@ def observe_shortlist(
             }
         )
         observation["episode_id"] = "ENTRY-" + stable_hash(
-            {
-                "signal_id": observation["signal_id"],
-                "symbol": observation["symbol"],
-                "strategy_id": observation["strategy_id"],
-                "timeframe": observation["timeframe"],
-                "data_cutoff_timestamp": observation[
-                    "data_cutoff_timestamp"
-                ],
-            }
+            {"observation_identity": observation_identity}
         )[:24]
         observation["content_hash"] = stable_hash(observation)
         observations.append(observation)
-    appended = _append_episodes(project_root, observations)
+    appended_rows = _append_episodes(project_root, observations)
+    natural_observations = [
+        row for row in observations if row["natural_strategy_candidate"]
+    ]
+    context_observations = [
+        row for row in observations if not row["natural_strategy_candidate"]
+    ]
     counts = {
         str(key): int(value)
         for key, value in pd.Series(
@@ -252,7 +297,7 @@ def observe_shortlist(
         ).value_counts().items()
     }
     funnel = _signal_funnel(
-        input_count=len(signals.get("signals", [])),
+        input_count=len(signal_rows),
         candidates=candidate_rows,
         observations=observations,
     )
@@ -296,7 +341,22 @@ def observe_shortlist(
             else "DEGRADED_OR_UNAVAILABLE"
         ),
         "sec_standalone_entry_allowed": False,
-        "new_episode_count": appended,
+        "natural_strategy_candidate_count": len(natural_observations),
+        "canonical_signal_input_count": len(
+            canonical_signals.get("signals", [])
+        ),
+        "tactical_15m_signal_input_count": len(
+            tactical_signals.get("signals", [])
+        ),
+        "combined_deduplicated_signal_input_count": len(signal_rows),
+        "context_watchlist_observation_count": len(context_observations),
+        "new_episode_count": len(appended_rows),
+        "new_natural_candidate_episode_count": sum(
+            bool(row["natural_strategy_candidate"]) for row in appended_rows
+        ),
+        "new_context_observation_episode_count": sum(
+            not bool(row["natural_strategy_candidate"]) for row in appended_rows
+        ),
         "observed_trade_store_available": not trades.empty,
         "observed_orderbook_store_available": not books.empty,
         "bar_proxy_can_confirm_entry": False,
@@ -379,7 +439,7 @@ def _candidate_signals(rows: Iterable[Any]) -> list[dict[str, Any]]:
         if not isinstance(row, dict):
             continue
         timeframe = str(row.get("timeframe", "")).lower()
-        if timeframe not in {"1h", "2h", "4h", "1d"}:
+        if timeframe not in {"15m", "1h", "2h", "4h", "1d"}:
             continue
         action = str(row.get("action", "")).upper()
         original_action = str(row.get("original_action", "")).upper()
@@ -397,11 +457,47 @@ def _candidate_signals(rows: Iterable[Any]) -> list[dict[str, Any]]:
     return usable
 
 
+def _combined_signal_rows(
+    canonical_rows: Iterable[Any], tactical_rows: Iterable[Any]
+) -> list[dict[str, Any]]:
+    """Combine observer inputs without making tactical rows money signals."""
+    latest: dict[str, dict[str, Any]] = {}
+    for source, rows in (
+        ("CANONICAL_MONEY_SIGNAL_ARTIFACT", canonical_rows),
+        ("TACTICAL_15M_OBSERVER_ARTIFACT", tactical_rows),
+    ):
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            row = {**raw, "observer_input_source": source}
+            identity = str(
+                row.get("setup_id")
+                or row.get("signal_id")
+                or stable_hash(row)
+            )
+            prior = latest.get(identity)
+            timestamp = str(
+                row.get("candidate_observed_at")
+                or row.get("signal_timestamp")
+                or row.get("data_timestamp")
+                or ""
+            )
+            prior_timestamp = str(
+                (prior or {}).get("candidate_observed_at")
+                or (prior or {}).get("signal_timestamp")
+                or (prior or {}).get("data_timestamp")
+                or ""
+            )
+            if prior is None or timestamp >= prior_timestamp:
+                latest[identity] = row
+    return list(latest.values())
+
+
 def _select_signals(
     rows: Iterable[dict[str, Any]], *, now: datetime, limit: int
 ) -> list[dict[str, Any]]:
     usable = list(rows)
-    priority = {"1h": 4, "2h": 3, "4h": 2, "1d": 1}
+    priority = {"15m": 5, "1h": 4, "2h": 3, "4h": 2, "1d": 1}
     usable.sort(
         key=lambda row: (
             _signal_data_valid(row, now=now),
@@ -419,10 +515,11 @@ def _select_signals(
     seen: set[str] = set()
     for row in usable:
         symbol = str(row.get("ticker") or row.get("asset") or "").upper()
-        if not symbol or symbol in seen:
+        identity = _signal_selection_identity(row)
+        if not symbol or identity in seen:
             continue
         selected.append(row)
-        seen.add(symbol)
+        seen.add(identity)
         if len(selected) >= limit:
             break
     return selected
@@ -435,7 +532,7 @@ def _timeframe_index(
     for row in rows:
         symbol = str(row.get("ticker") or row.get("asset") or "").upper()
         timeframe = str(row.get("timeframe", "")).lower()
-        if not symbol or timeframe not in {"1h", "2h", "4h", "1d"}:
+        if not symbol or timeframe not in {"15m", "1h", "2h", "4h", "1d"}:
             continue
         enriched = {
             **row,
@@ -443,6 +540,37 @@ def _timeframe_index(
         }
         result.setdefault(symbol, {}).setdefault(timeframe, []).append(enriched)
     return result
+
+
+def _signal_candidate_identity(signal: dict[str, Any]) -> str:
+    setup_id = str(signal.get("setup_id") or "").strip()
+    if setup_id:
+        return setup_id
+    return stable_hash(
+        {
+            "symbol": str(
+                signal.get("ticker") or signal.get("asset") or ""
+            ).upper(),
+            "strategy_id": str(signal.get("strategy_id") or ""),
+            "timeframe": str(signal.get("timeframe") or "").lower(),
+            "setup_origin_timestamp": str(
+                signal.get("setup_origin_timestamp")
+                or signal.get("data_timestamp")
+                or signal.get("signal_timestamp")
+                or ""
+            ),
+        }
+    )
+
+
+def _signal_selection_identity(signal: dict[str, Any]) -> str:
+    setup_id = str(signal.get("setup_id") or "").strip()
+    if setup_id:
+        return f"SETUP:{setup_id}"
+    symbol = str(
+        signal.get("ticker") or signal.get("asset") or ""
+    ).upper()
+    return f"SYMBOL:{symbol}"
 
 
 def _merge_phase11_10_support(
@@ -726,6 +854,10 @@ def _decision_contract(
         "as_of": now.isoformat(),
         "expires_at": signal.get("expiration_timestamp"),
         "strategy_family": family,
+        "strategy_timeframe_contract": signal.get(
+            "strategy_timeframe_contract"
+        ),
+        "candidate_unit": signal.get("candidate_unit"),
         "market_regime": market_regime,
         "contract_identity": contract,
         "hard_vetoes": sorted(set(hard_vetoes)),
@@ -938,6 +1070,9 @@ def _regime_route(regime: str, family: str) -> dict[str, Any]:
 def _hierarchy_status(
     signal: dict[str, Any], *, support: dict[str, list[dict[str, Any]]]
 ) -> dict[str, Any]:
+    explicit = _explicit_hierarchy_status(signal)
+    if explicit is not None:
+        return explicit
     timeframe = str(signal.get("timeframe", "")).lower()
     current = {
         key: any(bool(row.get("_hierarchy_current")) for row in rows)
@@ -986,6 +1121,113 @@ def _hierarchy_status(
             }
         ),
         "two_hour_refinement_required": False,
+        "fifteen_minute_strategy_can_create_candidate": False,
+        "fifteen_minute_execution_can_create_trade": False,
+    }
+
+
+def _explicit_hierarchy_status(
+    signal: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    raw = signal.get("strategy_timeframe_contract")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        contract = StrategyTimeframeContract(
+            entry_timeframe=str(raw["entry_timeframe"]),
+            setup_timeframe=str(raw["setup_timeframe"]),
+            context_timeframes=tuple(raw.get("context_timeframes", ())),
+            structural_timeframe=str(raw["structural_timeframe"]),
+            management_timeframe=str(raw["management_timeframe"]),
+            exit_timeframe=str(raw["exit_timeframe"]),
+            required_timeframes=tuple(raw["required_timeframes"]),
+            optional_timeframes=tuple(raw.get("optional_timeframes", ())),
+            session=str(raw.get("session", "RTH")),
+        )
+    except (KeyError, TypeError, ValueError):
+        return {
+            "decision_timeframe": str(signal.get("timeframe", "")).lower(),
+            "status": "EXPLICIT_TIMEFRAME_CONTRACT_INVALID",
+            "ready": False,
+            "daily_direction_available": False,
+            "four_hour_setup_available": False,
+            "two_hour_refinement_available": False,
+            "required_timeframes": [],
+            "observed_timeframes": [],
+            "blockers": ["EXPLICIT_TIMEFRAME_CONTRACT_INVALID"],
+            "support_sources": [],
+            "all_timeframes_need_not_agree": True,
+            "two_hour_refinement_required": False,
+            "fifteen_minute_strategy_can_create_candidate": True,
+            "fifteen_minute_execution_can_create_trade": False,
+        }
+    raw_evidence = signal.get("timeframe_evidence")
+    evidence = raw_evidence if isinstance(raw_evidence, Mapping) else {}
+    decision_at = pd.to_datetime(
+        signal.get("data_timestamp"), utc=True, errors="coerce"
+    )
+    observed_at = pd.to_datetime(
+        signal.get("signal_timestamp"), utc=True, errors="coerce"
+    )
+    blockers: list[str] = []
+    observed: list[str] = []
+    for timeframe in contract.all_timeframes:
+        item = evidence.get(timeframe)
+        if not isinstance(item, Mapping) or not bool(item.get("available")):
+            if timeframe in contract.required_timeframes:
+                blockers.append(f"REQUIRED_TIMEFRAME_MISSING:{timeframe}")
+            continue
+        if item.get("bar_closed") is not True:
+            if timeframe in contract.required_timeframes:
+                blockers.append(f"REQUIRED_TIMEFRAME_NOT_CLOSED:{timeframe}")
+            continue
+        available_at = pd.to_datetime(
+            item.get("available_at"), utc=True, errors="coerce"
+        )
+        if (
+            pd.isna(available_at)
+            or pd.isna(decision_at)
+            or available_at > decision_at
+        ):
+            if timeframe in contract.required_timeframes:
+                blockers.append(f"REQUIRED_TIMEFRAME_NONCAUSAL:{timeframe}")
+            continue
+        knowledge_at = pd.to_datetime(
+            item.get("knowledge_available_at"),
+            utc=True,
+            errors="coerce",
+        )
+        if (
+            not pd.isna(knowledge_at)
+            and (pd.isna(observed_at) or knowledge_at > observed_at)
+        ):
+            if timeframe in contract.required_timeframes:
+                blockers.append(
+                    f"REQUIRED_TIMEFRAME_NOT_OBSERVED_YET:{timeframe}"
+                )
+            continue
+        observed.append(timeframe)
+    ready = not blockers
+    return {
+        "decision_timeframe": contract.entry_timeframe,
+        "status": (
+            "EXPLICIT_CAUSAL_TIMEFRAME_CONTRACT_READY"
+            if ready
+            else "EXPLICIT_TIMEFRAME_CONTRACT_BLOCKED"
+        ),
+        "ready": ready,
+        "daily_direction_available": "1d" in observed,
+        "four_hour_setup_available": "4h" in observed,
+        "two_hour_refinement_available": "2h" in observed,
+        "required_timeframes": list(contract.required_timeframes),
+        "observed_timeframes": observed,
+        "blockers": blockers,
+        "support_sources": ["IMMUTABLE_SIGNAL_TIMEFRAME_EVIDENCE"],
+        "all_timeframes_need_not_agree": True,
+        "two_hour_refinement_required": False,
+        "fifteen_minute_strategy_can_create_candidate": (
+            contract.entry_timeframe == "15m"
+        ),
         "fifteen_minute_execution_can_create_trade": False,
     }
 
@@ -1356,6 +1598,18 @@ def _signal_funnel(
     return {
         "input_signals": int(input_count),
         "candidate_signals": len(candidates),
+        "natural_strategy_candidate_signals": sum(
+            candidate_evidence_classification(row)[
+                "natural_strategy_candidate"
+            ]
+            for row in candidates
+        ),
+        "context_watchlist_signals": sum(
+            not candidate_evidence_classification(row)[
+                "natural_strategy_candidate"
+            ]
+            for row in candidates
+        ),
         "shortlisted_symbols": len(observations),
         "hard_vetoed": sum(
             bool(row["decision_contract"]["hard_vetoes"])
@@ -1380,7 +1634,9 @@ def _signal_funnel(
     }
 
 
-def _append_episodes(project_root: Path, rows: list[dict[str, Any]]) -> int:
+def _append_episodes(
+    project_root: Path, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     path = project_root / PRIVATE_ROOT / "entry-episodes.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     existing: set[str] = set()
@@ -1391,14 +1647,14 @@ def _append_episodes(project_root: Path, rows: list[dict[str, Any]]) -> int:
             except json.JSONDecodeError:
                 continue
             existing.add(str(value.get("episode_id")))
-    appended = 0
+    appended: list[dict[str, Any]] = []
     with path.open("a", encoding="utf-8") as handle:
         for row in rows:
             if row["episode_id"] in existing:
                 continue
             handle.write(json.dumps(row, sort_keys=True, default=str) + "\n")
             existing.add(row["episode_id"])
-            appended += 1
+            appended.append(row)
     return appended
 
 
@@ -1416,7 +1672,19 @@ def _public_status(payload: dict[str, Any]) -> dict[str, Any]:
             "contract_identity_status_counts"
         ],
         "market_regime": payload["market_regime"],
+        "natural_strategy_candidate_count": payload[
+            "natural_strategy_candidate_count"
+        ],
+        "context_watchlist_observation_count": payload[
+            "context_watchlist_observation_count"
+        ],
         "new_episode_count": payload["new_episode_count"],
+        "new_natural_candidate_episode_count": payload[
+            "new_natural_candidate_episode_count"
+        ],
+        "new_context_observation_episode_count": payload[
+            "new_context_observation_episode_count"
+        ],
         "observed_trade_store_available": payload[
             "observed_trade_store_available"
         ],
@@ -1441,6 +1709,14 @@ def _flatten_observation(row: dict[str, Any]) -> dict[str, Any]:
         "symbol": row["symbol"],
         "strategy_id": row["strategy_id"],
         "timeframe": row["timeframe"],
+        "candidate_identity": row["candidate_identity"],
+        "observation_identity": row["observation_identity"],
+        "candidate_unit": row["candidate_unit"],
+        "natural_strategy_candidate": row["natural_strategy_candidate"],
+        "candidate_conditioned_evidence_eligible": row[
+            "candidate_conditioned_evidence_eligible"
+        ],
+        "evidence_scope": row["evidence_scope"],
         "state": row["state"],
         "strategy_family": row["decision_contract"]["strategy_family"],
         "asset_class": row["decision_contract"]["asset_profile"][

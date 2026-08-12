@@ -61,7 +61,7 @@ def test_allowed_swing_timeframes(timeframe: str) -> None:
     assert canonical_swing_timeframe(timeframe) == timeframe
 
 
-@pytest.mark.parametrize("timeframe", ["1m", "5m", "15m", "30m", "tick"])
+@pytest.mark.parametrize("timeframe", ["1m", "5m", "30m", "tick"])
 def test_forbidden_timeframes_fail_closed(timeframe: str) -> None:
     with pytest.raises(ValueError, match="FORBIDDEN_SWING_TIMEFRAME"):
         canonical_swing_timeframe(timeframe)
@@ -77,9 +77,7 @@ def test_open_candle_is_excluded() -> None:
             "close": [10.0, 11.0],
         }
     )
-    closed = validate_closed_candles(
-        frame, decision_time=pd.Timestamp("2026-01-02T10:30:00Z")
-    )
+    closed = validate_closed_candles(frame, decision_time=pd.Timestamp("2026-01-02T10:30:00Z"))
     assert list(closed["close"]) == [10.0]
 
 
@@ -133,8 +131,10 @@ def test_canonical_taxonomy_metadata_and_scope_are_enforced() -> None:
     assert report["canonical_section_count"] == 24
     assert report["component_metadata_failures"] == {}
     assert report["component_count"] >= 100
-    assert report["scope"]["minimum_timeframe"] == "1h"
-    assert {"5m", "15m"} <= set(report["scope"]["forbidden_timeframes"])
+    assert report["scope"]["minimum_timeframe"] == "15m"
+    assert "15m" in report["scope"]["allowed_timeframes"]
+    assert "15m" not in report["scope"]["forbidden_timeframes"]
+    assert "5m" in report["scope"]["forbidden_timeframes"]
     assert report["equal_weight_benchmark_required"] is True
     assert report["strategy_authority"] == "NONE"
 
@@ -142,9 +142,7 @@ def test_canonical_taxonomy_metadata_and_scope_are_enforced() -> None:
 def test_generator_is_deterministic_bounded_and_covers_required_families() -> None:
     first = generate_strategies(budget=100, seed=42)
     second = generate_strategies(budget=100, seed=42)
-    assert [item.strategy_hash for item in first] == [
-        item.strategy_hash for item in second
-    ]
+    assert [item.strategy_hash for item in first] == [item.strategy_hash for item in second]
     assert len(first) <= 100
     assert {item.family for item in first} == {
         "quality_momentum",
@@ -159,6 +157,24 @@ def test_generator_is_deterministic_bounded_and_covers_required_families() -> No
     assert all("FUT" not in item.asset_scope for item in first)
 
 
+def test_generator_registers_bounded_15m_swing_architectures() -> None:
+    pullbacks = generate_strategies(
+        budget=40,
+        family="trend_pullback",
+    )
+    breakouts = generate_strategies(
+        budget=40,
+        family="volatility_contraction_breakout",
+    )
+
+    for rows in (pullbacks, breakouts):
+        fifteen = [row for row in rows if row.entry_timeframe == "15m"]
+        assert len(fifteen) == 1
+        assert fifteen[0].confirmation_timeframe == "1h"
+        assert fifteen[0].regime_timeframe == "4h"
+        assert fifteen[0].rebalance == "EACH_ELIGIBLE_15M_CLOSE"
+
+
 def test_generator_rejects_excess_budget() -> None:
     with pytest.raises(ValueError, match="budget must be"):
         generate_strategies(budget=101)
@@ -171,23 +187,15 @@ def test_strategy_hash_mutation_is_blocked() -> None:
 
 
 def test_unregistered_and_out_of_bounds_parameters_are_blocked() -> None:
-    strategy = generate_strategies(
-        budget=1, family="etf_rotation"
-    )[0]
+    strategy = generate_strategies(budget=1, family="etf_rotation")[0]
     with pytest.raises(ValueError, match="PARAMETER_OUT_OF_BOUNDS"):
-        validate_strategy(
-            replace(strategy, parameters={**strategy.parameters, "top_n": 999})
-        )
+        validate_strategy(replace(strategy, parameters={**strategy.parameters, "top_n": 999}))
     with pytest.raises(ValueError, match="UNREGISTERED_PARAMETERS"):
-        validate_strategy(
-            replace(strategy, parameters={**strategy.parameters, "mystery": 1})
-        )
+        validate_strategy(replace(strategy, parameters={**strategy.parameters, "mystery": 1}))
 
 
 def test_backtest_uses_long_only_capped_exposure_and_next_bar_execution() -> None:
-    strategy = generate_strategies(
-        budget=1, family="etf_rotation"
-    )[0]
+    strategy = generate_strategies(budget=1, family="etf_rotation")[0]
     bars, eligible = deterministic_fixture(periods=700)
     result = run_backtest(strategy, bars, eligible=eligible, fixture=True)
     assert result.status == "COMPLETE"
@@ -205,9 +213,7 @@ def test_monthly_rotation_only_opens_after_scheduled_month_end_signal() -> None:
     strategy = generate_strategies(budget=1, family="etf_rotation")[0]
     bars, eligible = deterministic_fixture(periods=800)
     result = run_backtest(strategy, bars, eligible=eligible, fixture=True)
-    opened = (result.weights > 0) & (
-        result.weights.shift(1).fillna(0.0) == 0.0
-    )
+    opened = (result.weights > 0) & (result.weights.shift(1).fillna(0.0) == 0.0)
     entry_dates = result.weights.index[opened.any(axis=1)]
     assert len(entry_dates) > 0
     for timestamp in entry_dates:
@@ -313,9 +319,7 @@ def test_screener_eligibility_is_exact_date_point_in_time(
     monkeypatch.setattr(autopilot_service, "SCREENER_DB", database)
     index = pd.date_range("2026-01-01", periods=3, tz="UTC")
     bars = {"A": pd.DataFrame({"close": [1.0, 2.0, 3.0]}, index=index)}
-    eligibility, audit = autopilot_service._load_pit_eligibility(
-        bars, family="quality_momentum"
-    )
+    eligibility, audit = autopilot_service._load_pit_eligibility(bars, family="quality_momentum")
     assert eligibility["A"].tolist() == [False, True, False]
     assert audit["backprojected_rows"] == 0
     assert audit["eligible_observation_count"] == 1
@@ -407,9 +411,7 @@ def test_ledger_append_only_identity_and_forward_gate(tmp_path: Path) -> None:
             )
             == observation
         )
-        with pytest.raises(
-            ValueError, match="FORWARD_OBSERVATION_IMMUTABILITY_CONFLICT"
-        ):
+        with pytest.raises(ValueError, match="FORWARD_OBSERVATION_IMMUTABILITY_CONFLICT"):
             ledger.append_forward_observation(
                 registration_id=registration["registration_id"],
                 session_date="2026-01-02",
@@ -515,9 +517,7 @@ def test_block_bootstrap_is_deterministic_and_bounded() -> None:
 
 def test_pbo_requires_sufficient_fold_matrix() -> None:
     small = pd.DataFrame({"A": [1.0], "B": [0.0]})
-    assert probability_of_backtest_overfitting(small, small)["status"] == (
-        "INSUFFICIENT_SAMPLE"
-    )
+    assert probability_of_backtest_overfitting(small, small)["status"] == ("INSUFFICIENT_SAMPLE")
 
 
 def test_neighbor_and_cohort_stability_require_broad_support() -> None:
@@ -533,9 +533,7 @@ def test_neighbor_and_cohort_stability_require_broad_support() -> None:
         "C": {"sample_status": "EVALUABLE", "net_total_return": -0.1},
     }
     assert cohort_stability(cohorts)["status"] == "GO"
-    assert parameter_neighbor_stability(neighbors[:2])["status"] == (
-        "INSUFFICIENT_NEIGHBORS"
-    )
+    assert parameter_neighbor_stability(neighbors[:2])["status"] == ("INSUFFICIENT_NEIGHBORS")
 
 
 def test_public_writer_cannot_overwrite_frozen_ibkr_artifact() -> None:
@@ -616,17 +614,12 @@ def test_full_gate_can_only_promote_to_forward_candidate_not_authority(
         ledger.register_strategies([strategy])
         normal = _decision_result()
         doubled = _decision_result(doubled=True)
-        folds = [
-            (f"OOS-{index:02d}", _decision_result(net=0.05))
-            for index in range(1, 6)
-        ]
+        folds = [(f"OOS-{index:02d}", _decision_result(net=0.05)) for index in range(1, 6)]
         _decide(ledger, strategy, [normal, doubled], folds)
         decision = ledger.latest_decision(strategy.strategy_id)
         assert decision is not None
         assert decision["new_status"] == StrategyStatus.FROZEN_SHADOW
-        assert decision["research_level"] == (
-            ResearchLevel.FORWARD_OBSERVER_CANDIDATE
-        )
+        assert decision["research_level"] == (ResearchLevel.FORWARD_OBSERVER_CANDIDATE)
         registration = ledger.register_forward(strategy.strategy_id)
         assert registration["execution_authority"] == "NONE"
         assert registration["strategy_authority"] == "NONE"
@@ -671,9 +664,7 @@ def test_hierarchical_weights_fail_closed_without_metadata() -> None:
 
 def test_simple_benchmarks_are_costed_and_report_all_required_models() -> None:
     bars, eligible = deterministic_fixture(symbols=4, periods=400)
-    close = pd.DataFrame(
-        {symbol: frame["close"] for symbol, frame in bars.items()}
-    )
+    close = pd.DataFrame({symbol: frame["close"] for symbol, frame in bars.items()})
     returns = close.pct_change(fill_method=None).fillna(0.0)
     _, normal = run_simple_benchmarks(
         close,
@@ -698,6 +689,7 @@ def test_simple_benchmarks_are_costed_and_report_all_required_models() -> None:
     }
     assert normal["champion"] == "equal_weight"
     assert normal["results"]["world_buy_and_hold"]["available"] is False
-    assert stress["results"]["equal_weight"]["total_return"] <= (
-        normal["results"]["equal_weight"]["total_return"]
+    assert (
+        stress["results"]["equal_weight"]["total_return"]
+        <= (normal["results"]["equal_weight"]["total_return"])
     )

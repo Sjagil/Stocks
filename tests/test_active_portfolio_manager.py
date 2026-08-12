@@ -501,6 +501,11 @@ def test_ranking_recognizes_distinct_indicator_families_and_timeframes() -> None
     ]
     assert candidate["timeframes"] == ["1d", "1h", "1w", "4h"]
     assert candidate["opportunity_class"] == "TREND"
+    assert candidate["lifecycle_state"] == "DISCOVERED"
+    assert candidate["setup_id"] is None
+    assert candidate["active_swing_contract"]["status"] == (
+        "UNDECLARED_RESEARCH_ONLY"
+    )
     assert candidate["active_swing_timeframe_context"]["score"] == 0.8
     assert candidate["active_swing_timeframe_context"][
         "higher_timeframe_policy"

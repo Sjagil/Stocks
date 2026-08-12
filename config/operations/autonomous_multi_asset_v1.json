@@ -5,7 +5,9 @@
   "execution_mode": "CONTROLLED_LIVE",
   "description": "One-time activated, fail-closed multi-asset swing runtime at Level 1.",
   "primary_timeframes": [
+    "15m",
     "1h",
+    "2h",
     "4h",
     "1d",
     "1w"
@@ -49,6 +51,26 @@
     "single_instance_required": true,
     "reconcile_before_orders": true,
     "risk_reductions_before_entries": true,
-    "normal_cycle_seconds": 60
+    "normal_cycle_seconds": 60,
+    "fast_path_priority": [
+      "BROKER_RECONCILIATION",
+      "EXISTING_POSITION_RISK",
+      "EXISTING_POSITION_PROTECTION",
+      "NEW_ENTRY_EVALUATION",
+      "HEAVY_RESEARCH"
+    ],
+    "cadence_hours": {
+      "tactical_15m_bars": 0.25,
+      "primary_1h_scan": 1.0,
+      "setup_2h_refresh": 2.0,
+      "structure_4h_refresh": 4.0,
+      "daily_structure": 20.0,
+      "portfolio_fast_path": 0.25,
+      "position_management_when_open": 0.0,
+      "macro_news": 1.0,
+      "heavy_research": 24.0
+    },
+    "heavy_research_may_delay_position_management": false,
+    "event_triggered_full_universe_scan": false
   }
 }

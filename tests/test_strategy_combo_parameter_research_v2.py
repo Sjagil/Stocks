@@ -12,9 +12,7 @@ from stocks.research import parameter_research_v2 as research
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = (
-    ROOT / "config" / "research_contracts" / "stocks_parameter_space_registry_v2.json"
-)
+REGISTRY = ROOT / "config" / "research_contracts" / "stocks_parameter_space_registry_v2.json"
 
 
 def resolved_registry() -> dict[str, object]:
@@ -27,9 +25,7 @@ def strategy(name: str) -> dict[str, object]:
 
 def test_registry_resolves_every_runtime_strategy_and_rotational() -> None:
     resolved = resolved_registry()
-    expected = {spec.name for spec in lab.strategy_registry()} | {
-        "rotational_momentum"
-    }
+    expected = {spec.name for spec in lab.strategy_registry()} | {"rotational_momentum"}
     assert set(research.strategy_map(resolved)) == expected
     assert len(expected) == 33
 
@@ -87,15 +83,11 @@ def test_neighbors_change_exactly_one_registered_grid_step() -> None:
 def test_decimal_refinement_is_registered_before_execution() -> None:
     item = strategy("rsi_adx")
     threshold = next(
-        value
-        for value in item["search_parameters"]
-        if value["name"] == "entry_threshold"
+        value for value in item["search_parameters"] if value["name"] == "entry_threshold"
     )
     assert 12.5 in threshold["refinement_allowed_values"]
     assert 12.5 in threshold["allowed_values"]
-    refinements = research.refinement_configurations(
-        item, item["baseline_configuration"], lab
-    )
+    refinements = research.refinement_configurations(item, item["baseline_configuration"], lab)
     assert any(value["entry_threshold"] in {12.5, 17.5} for value in refinements)
 
 
@@ -127,9 +119,7 @@ def test_closed_week_resample_uses_week_ohlcv(tmp_path: Path) -> None:
         }
     )
     frame.to_parquet(source, index=False)
-    research.materialize_weekly_data(
-        source, destination, "2020-01-01", "2020-12-31", None, 7
-    )
+    research.materialize_weekly_data(source, destination, "2020-01-01", "2020-12-31", None, 7)
     weekly = pd.read_parquet(destination)
     assert len(weekly) == 2
     assert weekly.iloc[0]["open"] == 10.0
@@ -156,8 +146,11 @@ def test_forbidden_call_scan_is_ast_based(tmp_path: Path) -> None:
     assert audit["findings"][0]["token"] == "placeOrder"
 
 
-def test_registry_source_declares_intraday_unavailable() -> None:
+def test_registry_source_declares_dedicated_15m_builder_without_generic_campaign() -> None:
     source = json.loads(REGISTRY.read_text(encoding="utf-8"))
     assert source["timeframes"]["1h"]["status"] == "DATA_UNAVAILABLE_BLOCKED"
-    assert "15m" not in source["timeframes"]
-    assert "15m" in source["forbidden_timeframes"]
+    assert source["timeframes"]["15m"]["status"] == (
+        "DEDICATED_ACTIVE_SWING_NATIVE_DATA_AND_SIGNAL_BUILDER_AVAILABLE"
+    )
+    assert source["timeframes"]["15m"]["generic_v2_parameter_campaign_enabled"] is False
+    assert "15m" not in source["forbidden_timeframes"]

@@ -85,7 +85,7 @@ def test_operator_attestation_preserves_post_callback_timeout_limitation(
     assert result["api_closing_sell_path_proven"] is False
 
 
-def test_phase9_status_accepts_attested_round_trip_without_claiming_api_exit(
+def test_phase9_status_never_uses_attestation_for_canonical_gates(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -144,13 +144,18 @@ def test_phase9_status_accepts_attested_round_trip_without_claiming_api_exit(
 
     result = phase9_status(tmp_path)
 
-    assert result["status"] == "PHASE9_IBKR_MANUAL_PAPER_EXECUTION_ADAPTER_GO"
-    assert result["checks"]["reconciliation"] is True
-    assert result["checks"]["submit_cancel_canary"] is True
-    assert result["checks"]["closing_sell_canary"] is True
+    assert result["status"] == "NO_GO"
+    assert result["checks"]["reconciliation"] is False
+    assert result["checks"]["submit_cancel_canary"] is False
+    assert result["checks"]["fill_canary"] is True
+    assert result["checks"]["closing_sell_canary"] is False
     assert result["completion_basis"] == (
-        "PHASE9_BUY_EXECUTION_AND_OPERATOR_ATTESTED_TWS_CLOSE"
+        "OPERATOR_ATTESTED_EXTERNAL_CLOSE_NON_CANONICAL"
     )
+    assert result["operator_completion_effect"] == (
+        "BROKER_STATE_CONTEXT_ONLY_NO_CANONICAL_GATE_SATISFACTION"
+    )
+    assert result["canonical_execution_evidence_status"] == "NO_GO"
     assert result["api_closing_sell_path_proven"] is False
 
 

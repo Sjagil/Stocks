@@ -41,7 +41,7 @@ def capital_command(
         recommendation = _recommendation(project_root, policy)
         state = _state(project_root, policy)
         if state["current_level"] > recommendation["recommended_level"]:
-            state = _demote(
+            return _demote(
                 project_root,
                 policy,
                 recommendation["recommended_level"],
@@ -387,11 +387,8 @@ def _recommendation(
     )
     reconciled = (
         bool(phase9_checks.get("reconciliation"))
-        and (
-            reconciliation.get("reconciliation_status")
-            == "PAPER_RECONCILED_EMPTY"
-            or operator_completion is not None
-        )
+        and reconciliation.get("reconciliation_status")
+        == "PAPER_RECONCILED_EMPTY"
     )
     financial_finalist = bool(research.get("FINANCIAL_FINALIST_GO"))
     critical_incidents = int(
@@ -456,6 +453,11 @@ def _recommendation(
             "paper_reconciliation": reconciled,
             "operator_attested_manual_completion": (
                 operator_completion is not None
+            ),
+            "operator_attestation_effect": (
+                "BROKER_STATE_CONTEXT_ONLY_NO_PROMOTION_EFFECT"
+                if operator_completion is not None
+                else "NONE"
             ),
             "financial_finalist": financial_finalist,
             "critical_execution_incidents": critical_incidents,

@@ -1,0 +1,47 @@
+{
+  "schema": "rl_portfolio_rotation_contract_v1",
+  "version": "1.0.0",
+  "status": "FROZEN",
+  "mode": "SHADOW_ONLY",
+  "canonical_environment": "OpportunitySelectionEnv",
+  "top_n": 10,
+  "cash_action_always_available": true,
+  "accepted_entry_lifecycle_states": [
+    "ENTRY_READY",
+    "ROTATION_CANDIDATE"
+  ],
+  "accepted_shariah_statuses": [
+    "SHARIAH_ELIGIBLE_PIT",
+    "SHARIAH_COMPLIANT"
+  ],
+  "accepted_product_shariah_statuses": [
+    "SHARIAH_PRODUCT_ELIGIBLE_PIT",
+    "SHARIAH_PRODUCT_COMPLIANT"
+  ],
+  "require_deterministic_allocator_membership": true,
+  "require_contract_resolved": true,
+  "require_positive_expected_net_return": true,
+  "require_positive_expected_r": true,
+  "require_whole_share_preflight": true,
+  "require_causal_candidate_history": true,
+  "require_promoted_dedicated_policy": true,
+  "require_oos_promotion_gate": true,
+  "candidate_history_path": "data/market_context/private/entry-episodes.jsonl",
+  "candidate_outcome_path": "data/market_context/private/entry-episode-outcomes.jsonl",
+  "minimum_natural_candidate_episodes": 500,
+  "minimum_closed_candidate_outcomes": 250,
+  "minimum_independent_candidate_clusters": 150,
+  "minimum_decision_periods": 100,
+  "minimum_supported_timeframes": 3,
+  "minimum_market_regimes": 3,
+  "promotion_evidence_path": "output/rl/portfolio-rotation/promotion.json",
+  "policy_may_create_signals": false,
+  "policy_may_change_eligibility": false,
+  "policy_may_increase_weight": false,
+  "policy_may_override_caps": false,
+  "financial_effect_applied": false,
+  "execution_authority": "NONE",
+  "automatic_order_submission": false,
+  "broker_calls": 0,
+  "broker_writes": 0
+}

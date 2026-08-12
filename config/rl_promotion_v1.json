@@ -1,0 +1,19 @@
+{
+  "schema": "rl_promotion_gate_v1",
+  "version": "RL_PROMOTION_GATE_V1",
+  "status": "FROZEN",
+  "maximum_drawdown": 0.1,
+  "minimum_worst_regime_return": -0.02,
+  "minimum_cvar_95": -0.03,
+  "maximum_turnover": 12.0,
+  "minimum_trade_count": 100,
+  "minimum_episode_count": 30,
+  "minimum_bootstrap_probability_of_improvement": 0.95,
+  "required_cost_stress_multiplier": 2.0,
+  "minimum_cost_stress_net_return": 0.0,
+  "requires_no_safety_regression": true,
+  "requires_production_point_in_time_data": true,
+  "requires_independent_forward_evidence": true,
+  "automatic_promotion": false,
+  "automatic_live_activation": false
+}

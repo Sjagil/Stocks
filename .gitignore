@@ -12,6 +12,7 @@ output/
 reports/
 results/
 reference_repos/
+models/rl/
 backups/
 .codex-backups/
 .codex_backups/

@@ -49,7 +49,11 @@ FREEZE_SOURCES = (
     "scripts/status_bot.ps1",
     "src/stocks/ai/contracts.py",
     "src/stocks/ai/governance.py",
+    "src/stocks/ai/intelligence.py",
+    "src/stocks/ai/modeling.py",
+    "src/stocks/ai/panel.py",
     "src/stocks/ai/plane.py",
+    "src/stocks/ai/reference_knowledge.py",
     "src/stocks/portfolio/quant_authority.py",
     "src/stocks/portfolio/execution_bridge.py",
     "src/stocks/portfolio/execution_feasibility.py",
@@ -69,6 +73,7 @@ FREEZE_SOURCES = (
     "src/stocks/quant_platform/professional.py",
     "src/stocks/quant_platform/regime.py",
     "tests/test_ai_research_plane.py",
+    "tests/test_ai_decision_intelligence.py",
 )
 
 

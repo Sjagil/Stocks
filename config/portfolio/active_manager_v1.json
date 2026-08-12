@@ -1,17 +1,18 @@
 {
   "schema": "active_multi_asset_portfolio_policy_v1",
   "base_currency": "EUR",
-  "primary_timeframes": ["1h", "4h", "1d", "1w"],
+  "primary_timeframes": ["15m", "1h", "2h", "4h", "1d", "1w"],
   "active_swing_timeframe_policy": {
     "information_weights": {
       "1w": 0.05,
       "1d": 0.15,
       "4h": 0.30,
       "2h": 0.20,
-      "1h": 0.30
+      "1h": 0.30,
+      "15m": 0.15
     },
     "higher_timeframe_policy": "MULTIPLIER_NOT_AUTOMATIC_VETO",
-    "timing_15m_status": "UNAVAILABLE_RESEARCH_CONTRACT_FORBIDS_15M"
+    "timing_15m_status": "FIRST_CLASS_TACTICAL_ACTIVE_SWING_RESEARCH"
   },
   "opportunity_classes": ["TREND", "REVERSAL", "REAL_ASSET"],
   "real_asset_context": {

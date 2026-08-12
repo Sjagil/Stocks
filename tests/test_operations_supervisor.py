@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 import stocks.operations.service as service
 from stocks.application.phase_gates import PhaseGateStatus
@@ -17,9 +20,38 @@ def _phase1(root: Path) -> PhaseGateStatus:
     )
 
 
-def test_machine_run_is_bounded_and_append_only(
-    tmp_path: Path, monkeypatch
-) -> None:
+@pytest.fixture(autouse=True)
+def _detached_background_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        service,
+        "background_job_status",
+        lambda _root, job_name: {
+            "schema": "stocks_background_job_v1",
+            "status": "NOT_RUN",
+            "job_name": job_name,
+            "execution_authority": "NONE",
+            "broker_writes": 0,
+            "orders_generated": 0,
+        },
+    )
+    monkeypatch.setattr(
+        service,
+        "launch_background_job",
+        lambda _root, job_name, _arguments, **_kwargs: {
+            "schema": "stocks_background_job_v1",
+            "status": "ENQUEUED",
+            "job_name": job_name,
+            "worker_pid": 43210,
+            "money_loop_blocked": False,
+            "resource_priority": "BELOW_NORMAL",
+            "execution_authority": "NONE",
+            "broker_writes": 0,
+            "orders_generated": 0,
+        },
+    )
+
+
+def test_machine_run_is_bounded_and_append_only(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
@@ -44,24 +76,16 @@ def test_machine_run_is_bounded_and_append_only(
     assert result["interval_seconds"] == 60
     assert result["execution_authority"] == "NONE"
     assert result["cycles"][0]["status"] == "GO"
-    cycle_log = (
-        tmp_path / "data" / "operations" / "private" / "cycles.jsonl"
-    )
+    cycle_log = tmp_path / "data" / "operations" / "private" / "cycles.jsonl"
     rows = cycle_log.read_text(encoding="utf-8").splitlines()
     assert len(rows) == 1
     assert json.loads(rows[0])["broker_writes"] == 0
     machine_status = json.loads(
-        (tmp_path / "output" / "operations" / "machine-status.json").read_text(
-            encoding="utf-8"
-        )
+        (tmp_path / "output" / "operations" / "machine-status.json").read_text(encoding="utf-8")
     )
     assert machine_status["last_cycle_id"] == result["cycles"][0]["cycle_id"]
     assert machine_status["status"] == "GO"
-    heartbeat = json.loads(
-        (tmp_path / "runtime" / "heartbeat.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    heartbeat = json.loads((tmp_path / "runtime" / "heartbeat.json").read_text(encoding="utf-8"))
     assert heartbeat["runtime_status"] == "GO"
     assert heartbeat["cycle_id"] == result["cycles"][0]["cycle_id"]
     assert heartbeat["execution_authority"] == "NONE"
@@ -74,30 +98,17 @@ def test_intraday_refresh_plan_rotates_ranked_challengers(
     path = tmp_path / "output" / "portfolio"
     path.mkdir(parents=True)
     (path / "opportunity_ranking.json").write_text(
-        json.dumps(
-            {
-                "opportunities": [
-                    {"ticker": f"CHALLENGER{index}"}
-                    for index in range(40)
-                ]
-            }
-        ),
+        json.dumps({"opportunities": [{"ticker": f"CHALLENGER{index}"} for index in range(40)]}),
         encoding="utf-8",
     )
 
-    first = service._intraday_refresh_plan(
-        tmp_path, {"intraday_refresh_cursor": 0}
-    )
+    first = service._intraday_refresh_plan(tmp_path, {"intraday_refresh_cursor": 0})
     second = service._intraday_refresh_plan(
         tmp_path, {"intraday_refresh_cursor": first["next_cursor"]}
     )
 
-    assert first["rotation_status"] == (
-        "PRIORITY_AND_ROTATING_CHALLENGER_BATCH_GO"
-    )
-    assert first["core_symbol_count"] == len(
-        service.INTRADAY_CORE_SYMBOLS
-    )
+    assert first["rotation_status"] == ("PRIORITY_AND_ROTATING_CHALLENGER_BATCH_GO")
+    assert first["core_symbol_count"] == len(service.INTRADAY_CORE_SYMBOLS)
     assert len(first["priority_symbols"]) == 25
     assert len(first["challenger_symbols"]) == 5
     assert first["collection_symbol_limit"] == 50
@@ -138,9 +149,7 @@ def test_intraday_refresh_plan_extends_pool_with_refreshable_signals(
                         "ticker": "STALE_REFERENCE",
                         "data_freshness": "STALE",
                         "original_action": "WATCHLIST",
-                        "price_validity_status": (
-                            "CURRENT_MARKET_REFERENCE_UNAVAILABLE_OR_STALE"
-                        ),
+                        "price_validity_status": ("CURRENT_MARKET_REFERENCE_UNAVAILABLE_OR_STALE"),
                         "expiration_timestamp": "2099-01-01T00:00:00+00:00",
                         "confidence_score": "1.00",
                     },
@@ -164,9 +173,7 @@ def test_intraday_refresh_plan_extends_pool_with_refreshable_signals(
         encoding="utf-8",
     )
 
-    result = service._intraday_refresh_plan(
-        tmp_path, {"intraday_refresh_cursor": 0}
-    )
+    result = service._intraday_refresh_plan(tmp_path, {"intraday_refresh_cursor": 0})
 
     assert result["opportunity_pool_count"] == 1
     assert result["signal_pool_count"] == 3
@@ -194,9 +201,7 @@ def test_intraday_refresh_plan_accepts_list_signal_artifact(
                     "ticker": "LIST_SIGNAL",
                     "data_freshness": "STALE",
                     "original_action": "WATCHLIST",
-                    "price_validity_status": (
-                        "CURRENT_MARKET_REFERENCE_UNAVAILABLE_OR_STALE"
-                    ),
+                    "price_validity_status": ("CURRENT_MARKET_REFERENCE_UNAVAILABLE_OR_STALE"),
                     "expiration_timestamp": "2099-01-01T00:00:00+00:00",
                     "confidence_score": "0.75",
                 }
@@ -229,9 +234,7 @@ def test_intraday_refresh_plan_always_includes_observed_positions(
         encoding="utf-8",
     )
 
-    result = service._intraday_refresh_plan(
-        tmp_path, {"intraday_refresh_cursor": 0}
-    )
+    result = service._intraday_refresh_plan(tmp_path, {"intraday_refresh_cursor": 0})
 
     assert result["position_symbols"] == ["HELD", "AAPL"]
     assert result["position_symbol_count"] == 2
@@ -267,8 +270,10 @@ def test_daily_performance_capture_is_verified_and_append_only(
     first = service._record_daily_performance(tmp_path)
     second = service._record_daily_performance(tmp_path)
     history = (
-        tmp_path / "data" / "performance" / "private" / "daily-pnl.jsonl"
-    ).read_text(encoding="utf-8").splitlines()
+        (tmp_path / "data" / "performance" / "private" / "daily-pnl.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
 
     assert first["records_appended"] == 1
     assert second["records_appended"] == 0
@@ -280,15 +285,13 @@ def test_daily_performance_capture_is_verified_and_append_only(
     assert first["broker_calls"] == 0
 
 
-def test_survivor_shadow_observer_runs_before_portfolio_without_authority(
+def test_survivor_shadow_observer_is_delegated_without_authority(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
     calls: list[tuple[str, ...]] = []
 
@@ -307,18 +310,13 @@ def test_survivor_shadow_observer_runs_before_portfolio_without_authority(
     )
 
     cycle = result["cycles"][0]
-    survivor_call = ("research", "phase11-14", "observe")
     portfolio_call = ("portfolio", "plan")
-    assert survivor_call in calls
-    assert calls.index(survivor_call) < calls.index(portfolio_call)
-    assert ("telegram", "send-shadow-digest") in calls
-    assert cycle["survivor_shadow_observation"]["status"] == "GO"
-    assert (
-        service._state(tmp_path)[
-            "last_survivor_shadow_observation_refresh"
-        ]
-        is not None
-    )
+    assert ("research", "phase11-14", "observe") not in calls
+    assert ("telegram", "send-shadow-digest") not in calls
+    assert portfolio_call in calls
+    assert cycle["survivor_shadow_observation"]["status"] == ("BACKGROUND_DELEGATED")
+    assert cycle["survivor_shadow_observation"]["money_loop_blocked"] is False
+    assert cycle["primary_background"]["status"] == "ENQUEUED"
     assert cycle["execution_authority"] == "NONE"
     assert cycle["broker_writes"] == 0
 
@@ -344,9 +342,7 @@ def test_required_step_timeout_degrades_cycle_and_refresh_state(
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
 
     def command_step(_root, arguments, **_kwargs):
@@ -369,8 +365,10 @@ def test_required_step_timeout_degrades_cycle_and_refresh_state(
     cycle = result["cycles"][0]
     assert result["status"] == "DEGRADED"
     assert cycle["status"] == "DEGRADED"
-    assert "OPERATIONAL_STEP_MARKET_DATA_TIMEOUT" in cycle["blockers"]
-    assert "OPERATIONAL_STEP_DAILY_TIMEOUT" in cycle["blockers"]
+    assert "OPERATIONAL_STEP_MARKET_DATA_15M_TIMEOUT" in cycle["blockers"]
+    assert cycle["active_swing_15m_candidates"]["status"] == "DATA_BLOCKED"
+    assert cycle["market_data"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["daily"]["status"] == "BACKGROUND_DELEGATED"
     assert cycle["execution_authority"] == "NONE"
     assert cycle["broker_writes"] == 0
     state = service._state(tmp_path)
@@ -378,26 +376,18 @@ def test_required_step_timeout_degrades_cycle_and_refresh_state(
     assert state["last_cycle_id"] == cycle["cycle_id"]
     assert state["last_cycle_status"] == "DEGRADED"
     machine_status = json.loads(
-        (tmp_path / "output" / "operations" / "machine-status.json").read_text(
-            encoding="utf-8"
-        )
+        (tmp_path / "output" / "operations" / "machine-status.json").read_text(encoding="utf-8")
     )
     assert machine_status["status"] == "DEGRADED"
     assert machine_status["last_cycle_id"] == cycle["cycle_id"]
-    assert "OPERATIONAL_STEP_DAILY_TIMEOUT" in machine_status[
-        "last_cycle_blockers"
-    ]
+    assert "OPERATIONAL_STEP_MARKET_DATA_15M_TIMEOUT" in machine_status["last_cycle_blockers"]
 
 
-def test_mtf_telegram_failure_is_recorded_but_non_blocking(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_mtf_telegram_failure_is_recorded_but_non_blocking(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
 
     def command_step(_root, arguments, **_kwargs):
@@ -419,26 +409,19 @@ def test_mtf_telegram_failure_is_recorded_but_non_blocking(
 
     cycle = result["cycles"][0]
     assert cycle["status"] == "GO"
-    assert cycle["multitimeframe_pit_notification"]["status"] == (
-        "DEGRADED"
-    )
-    assert not any(
-        "MTF_PIT_NOTIFICATION" in blocker
-        for blocker in cycle["blockers"]
-    )
+    assert cycle["multitimeframe_pit_notification"]["status"] == ("DEGRADED")
+    assert not any("MTF_PIT_NOTIFICATION" in blocker for blocker in cycle["blockers"])
     assert cycle["execution_authority"] == "NONE"
     assert cycle["broker_writes"] == 0
 
 
-def test_failed_macro_refresh_does_not_advance_refresh_clock(
+def test_macro_refresh_is_delegated_and_does_not_advance_foreground_clock(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
 
     def command_step(_root, arguments, **_kwargs):
@@ -458,20 +441,19 @@ def test_failed_macro_refresh_does_not_advance_refresh_clock(
         interval_seconds=1,
     )
 
-    assert result["status"] == "DEGRADED"
+    assert result["status"] == "GO"
     assert service._state(tmp_path)["last_macro_refresh"] is None
-    assert "OPERATIONAL_STEP_MACRO_ERROR" in result["cycles"][0]["blockers"]
+    cycle = result["cycles"][0]
+    assert cycle["macro"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["macro"]["money_loop_blocked"] is False
+    assert "OPERATIONAL_STEP_MACRO_ERROR" not in cycle["blockers"]
 
 
-def test_partial_macro_context_is_non_blocking_and_advances_clock(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_delegated_macro_context_is_non_blocking(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
 
     def command_step(_root, arguments, **_kwargs):
@@ -498,26 +480,21 @@ def test_partial_macro_context_is_non_blocking_and_advances_clock(
     cycle = result["cycles"][0]
     assert result["status"] == "GO"
     assert cycle["status"] == "GO"
-    assert cycle["macro"]["status"] == "DATA_INCOMPLETE"
-    assert (
-        cycle["macro_context_policy"]
-        == "OPTIONAL_PARTIAL_CONTEXT_NON_BLOCKING"
-    )
+    assert cycle["macro"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["macro_context_policy"] == "STANDARD"
     assert cycle["blockers"] == []
-    assert service._state(tmp_path)["last_macro_refresh"] is not None
+    assert service._state(tmp_path)["last_macro_refresh"] is None
     assert cycle["execution_authority"] == "NONE"
     assert cycle["broker_writes"] == 0
 
 
-def test_hourly_macro_and_news_refresh_are_bounded_and_read_only(
+def test_primary_context_refresh_is_background_only_and_read_only(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
-    monkeypatch.setattr(
-        service, "_refresh_due", lambda _value, **_kwargs: True
-    )
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: True)
     monkeypatch.setattr(service, "_research_due", lambda _root: False)
     commands: list[tuple[str, ...]] = []
 
@@ -550,53 +527,206 @@ def test_hourly_macro_and_news_refresh_are_bounded_and_read_only(
 
     cycle = result["cycles"][0]
     state = service._state(tmp_path)
-    assert ("macro", "update") in commands
-    assert ("telegram", "market-digest-preview") in commands
-    assert (
-        "market",
-        "context",
-        "build",
-        "--symbols",
-        ",".join(service._market_context_symbols(list(service.INTRADAY_CORE_SYMBOLS))),
-        "--max-expirations",
-        "4",
-    ) in commands
-    assert (
-        "market",
-        "context",
-        "cot-update",
-        "--start",
-        "2018-01-01",
-    ) in commands
-    assert ("market", "context", "transmission") in commands
-    assert (
-        "market",
-        "context",
-        "observe",
-        "--max-symbols",
-        "20",
-        "--depth-symbols",
-        "5",
-    ) in commands
-    assert ("research", "registry", "roles") in commands
-    assert ("p3", "publish") in commands
-    assert cycle["news_digest"]["status"] == "GO"
-    assert cycle["market_context"]["status"] == "GO"
-    assert cycle["cot_context"]["status"] == "GO"
-    assert cycle["asset_context"]["status"] == "GO"
-    assert cycle["entry_observer"]["status"] == "GO"
-    assert cycle["role_leaderboards"]["status"] == "GO"
-    assert cycle["market_context_policy"] == (
-        "CONTEXT_ONLY_NO_STANDALONE_ENTRY_AUTHORITY"
+    assert ("macro", "update") not in commands
+    assert any(
+        command[:3] == ("data", "multitimeframe", "collect")
+        and command[command.index("--intervals") + 1] == "15m"
+        for command in commands
     )
-    assert state["last_macro_refresh"] is not None
-    assert state["last_news_refresh"] is not None
-    assert state["last_market_context_refresh"] is not None
-    assert state["last_cot_context_refresh"] is not None
-    assert state["last_asset_context_refresh"] is not None
+    assert not any(
+        command[:3] == ("data", "multitimeframe", "collect")
+        and command[command.index("--intervals") + 1] == "1h,2h,4h,1d,1w,1mo"
+        for command in commands
+    )
+    assert ("telegram", "market-digest-preview") not in commands
+    assert not any(command[:3] == ("market", "context", "build") for command in commands)
+    assert not any(command[:3] == ("market", "context", "cot-update") for command in commands)
+    assert ("market", "context", "transmission") not in commands
+    assert any(command[:3] == ("market", "context", "observe") for command in commands)
+    assert ("research", "registry", "roles") not in commands
+    assert ("p3", "publish") not in commands
+    assert cycle["news_digest"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["market_context"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["cot_context"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["asset_context"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["entry_observer"]["status"] == "GO"
+    assert cycle["role_leaderboards"]["status"] == "BACKGROUND_DELEGATED"
+    assert cycle["market_context_policy"] == ("CONTEXT_ONLY_NO_STANDALONE_ENTRY_AUTHORITY")
+    assert state["last_macro_refresh"] is None
+    assert state["last_news_refresh"] is None
+    assert state["last_market_context_refresh"] is None
+    assert state["last_cot_context_refresh"] is None
+    assert state["last_asset_context_refresh"] is None
     assert state["last_entry_observer_refresh"] is not None
-    assert state["last_role_leaderboards_refresh"] is not None
-    assert state["last_p3_evidence_refresh"] is not None
+    assert state["last_role_leaderboards_refresh"] is None
+    assert state["last_p3_evidence_refresh"] is None
+    assert cycle["primary_background"]["status"] == "ENQUEUED"
+    assert cycle["execution_authority"] == "NONE"
+    assert cycle["broker_writes"] == 0
+
+
+def test_recent_fast_path_is_skipped_but_reconciliation_keeps_priority(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
+    monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
+    monkeypatch.setattr(service, "_research_due", lambda _root: False)
+    calls: list[tuple[str, ...]] = []
+
+    def command_step(_root, arguments, **_kwargs):
+        calls.append(arguments)
+        return {"status": "GO", "schema": "step"}
+
+    monkeypatch.setattr(service, "_command_step", command_step)
+    now = datetime.now(UTC).isoformat()
+    state = service._state(tmp_path)
+    state.update(
+        enabled=True,
+        paused=False,
+        requested_mode="SIGNALS_ONLY",
+        last_tactical_data_refresh=now,
+        last_data_refresh=now,
+        last_portfolio_refresh=now,
+        last_daily_refresh=now,
+        last_dynamic_refresh=now,
+        last_hmm_regime_refresh=now,
+        last_active_swing_sprints_refresh=now,
+    )
+
+    cycle = service._cycle(tmp_path, state, "SIGNALS_ONLY")
+
+    assert not any(call[:2] == ("data", "multitimeframe") for call in calls)
+    assert ("portfolio", "plan") not in calls
+    assert ("ibkr", "phase9", "reconcile") in calls
+    assert cycle["scheduling"]["fast_path_due"] is False
+    assert cycle["tactical_market_data"]["status"] == "NOT_DUE"
+    assert cycle["portfolio_manager"]["status"] == "NOT_DUE"
+    assert cycle["execution_authority"] == "NONE"
+    assert cycle["broker_writes"] == 0
+
+
+def test_tactical_cycle_uses_dedicated_candidate_path_after_reconciliation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
+    monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
+    monkeypatch.setattr(service, "_research_due", lambda _root: False)
+    monkeypatch.setattr(
+        service,
+        "active_swing_context_gaps",
+        lambda *_args, **_kwargs: {
+            "schema": "active_swing_context_gap_audit_v1",
+            "status": "CONTEXT_REFRESH_REQUIRED",
+            "gap_symbol_count": 1,
+            "gap_symbols": ["CONTEXTGAP"],
+        },
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def command_step(_root, arguments, **_kwargs):
+        calls.append(arguments)
+        return {"status": "GO", "schema": "step"}
+
+    monkeypatch.setattr(service, "_command_step", command_step)
+    now = datetime.now(UTC).isoformat()
+    state = service._state(tmp_path)
+    state.update(
+        enabled=True,
+        paused=False,
+        requested_mode="SIGNALS_ONLY",
+        last_tactical_data_refresh=None,
+        last_data_refresh=now,
+        last_portfolio_refresh=now,
+        last_daily_refresh=now,
+        last_dynamic_refresh=now,
+        last_hmm_regime_refresh=now,
+        last_active_swing_sprints_refresh=now,
+    )
+
+    cycle = service._cycle(tmp_path, state, "SIGNALS_ONLY")
+
+    reconciliation_call = ("ibkr", "phase9", "reconcile")
+    tactical_call = next(
+        call
+        for call in calls
+        if call[:3] == ("data", "multitimeframe", "collect")
+        and call[call.index("--intervals") + 1] == "15m"
+    )
+    candidate_call = next(call for call in calls if call[:2] == ("signals", "active-swing-refresh"))
+    context_call = next(
+        call
+        for call in calls
+        if call[:3] == ("data", "multitimeframe", "collect")
+        and call[call.index("--intervals") + 1] == "1h,4h"
+    )
+    assert calls.index(reconciliation_call) < calls.index(tactical_call)
+    assert calls.index(tactical_call) < calls.index(context_call)
+    assert calls.index(context_call) < calls.index(candidate_call)
+    assert context_call[context_call.index("--symbols") + 1] == "CONTEXTGAP"
+    assert ("dynamic", "daily") not in calls
+    assert cycle["scheduling"]["reconciliation_executed_before_market_data"] is True
+    assert cycle["scheduling"]["full_dynamic_scan_tactical_path_allowed"] is False
+    assert cycle["active_swing_15m_candidates"]["status"] == "GO"
+    assert cycle["active_swing_context_bootstrap"]["status"] == "GO"
+    assert cycle["scheduling"]["tactical_context_gap_count"] == 1
+    assert cycle["active_swing_15m_candidates"]["duration_seconds"] >= 0
+    assert service._state(tmp_path)["last_active_swing_candidate_refresh"] is not None
+    assert cycle["execution_authority"] == "NONE"
+    assert cycle["broker_writes"] == 0
+
+
+def test_observed_position_management_runs_before_discovery(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
+    portfolio_root = tmp_path / "output" / "portfolio"
+    portfolio_root.mkdir(parents=True)
+    (portfolio_root / "current_allocation.json").write_text(
+        json.dumps({"positions": [{"ticker": "HELD"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
+    monkeypatch.setattr(service, "_research_due", lambda _root: False)
+    calls: list[tuple[str, ...]] = []
+
+    def command_step(_root, arguments, **_kwargs):
+        calls.append(arguments)
+        return {"status": "GO", "schema": "step"}
+
+    monkeypatch.setattr(service, "_command_step", command_step)
+    now = datetime.now(UTC).isoformat()
+    state = service._state(tmp_path)
+    state.update(
+        last_tactical_data_refresh=now,
+        last_data_refresh=now,
+        last_portfolio_refresh=now,
+        last_daily_refresh=now,
+        last_dynamic_refresh=now,
+        last_hmm_regime_refresh=now,
+        last_active_swing_sprints_refresh=now,
+    )
+
+    cycle = service._cycle(tmp_path, state, "SIGNALS_ONLY")
+
+    reconciliation_call = ("ibkr", "phase9", "reconcile")
+    portfolio_call = ("portfolio", "plan")
+    assert calls.index(reconciliation_call) < calls.index(portfolio_call)
+    later_discovery_calls = [
+        call
+        for call in calls
+        if call[:2]
+        in {
+            ("market", "context"),
+            ("research", "phase11-12"),
+            ("research", "phase11-14"),
+        }
+    ]
+    assert later_discovery_calls
+    assert calls.index(portfolio_call) < min(calls.index(call) for call in later_discovery_calls)
+    assert calls.count(portfolio_call) == 1
+    assert cycle["portfolio_priority_path"] == "POSITION_RISK_FIRST"
+    assert cycle["scheduling"]["position_risk_executed_before_discovery"] is True
     assert cycle["execution_authority"] == "NONE"
     assert cycle["broker_writes"] == 0
 
@@ -637,12 +767,65 @@ def test_signals_only_uses_proven_live_read_only_reconciliation(
         encoding="utf-8",
     )
 
-    assert service._reconciliation_arguments(
-        tmp_path, "SIGNALS_ONLY"
-    ) == ("live", "reconcile")
-    assert service._reconciliation_arguments(
-        tmp_path, "PAPER_AUTOMATIC"
-    ) == ("ibkr", "phase9", "reconcile")
+    assert service._reconciliation_arguments(tmp_path, "SIGNALS_ONLY") == ("live", "reconcile")
+    assert service._reconciliation_arguments(tmp_path, "PAPER_AUTOMATIC") == (
+        "ibkr",
+        "phase9",
+        "reconcile",
+    )
+
+
+def test_current_flat_broker_truth_is_operationally_usable_while_history_blocks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    payload = _flat_read_only_reconciliation()
+    assert service._reconciliation_read_only_usable(payload) is True
+    assert service._step_blockers("RECONCILIATION", payload) == []
+    unsafe = {
+        **payload,
+        "broker_write_counters": {
+            **payload["broker_write_counters"],
+            "place_order_calls": 1,
+        },
+    }
+    assert service._reconciliation_read_only_usable(unsafe) is False
+    assert service._step_blockers("RECONCILIATION", unsafe) == [
+        "OPERATIONAL_STEP_RECONCILIATION_NO_GO"
+    ]
+
+    (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
+    monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: False)
+    monkeypatch.setattr(service, "_research_due", lambda _root: False)
+
+    def command_step(_root, arguments, **_kwargs):
+        if arguments == ("ibkr", "phase9", "reconcile"):
+            return dict(payload)
+        return {"status": "GO", "schema": "step"}
+
+    monkeypatch.setattr(service, "_command_step", command_step)
+
+    cycle = service._cycle(
+        tmp_path,
+        service._state(tmp_path),
+        "SIGNALS_ONLY",
+    )
+    state = service._state(tmp_path)
+
+    assert cycle["reconciliation"]["status"] == "NO_GO"
+    assert cycle["reconciliation_operationally_usable"] is True
+    assert cycle["reconciliation_operational_broker_state"] == ("CURRENT_BROKER_FLAT_READ_ONLY")
+    assert cycle["reconciliation_historical_execution_evidence"] == (
+        "INCOMPLETE_HISTORICAL_EXECUTION_CHAIN"
+    )
+    assert cycle["reconciliation_historical_execution_blocks_trading"] is True
+    assert not any("RECONCILIATION" in blocker for blocker in cycle["blockers"])
+    assert state["last_account_reconciliation"] is not None
+    assert state["last_position_check"] is not None
+    assert state["last_ibkr_status"] == "CURRENT_BROKER_FLAT_READ_ONLY"
+    assert cycle["execution_authority"] == "NONE"
+    assert cycle["broker_writes"] == 0
 
 
 def test_current_partial_news_context_is_non_blocking() -> None:
@@ -670,9 +853,7 @@ def test_current_partial_news_context_is_non_blocking() -> None:
         },
     }
     assert service._news_context_usable(stale) is False
-    assert service._step_blockers("NEWS_DIGEST", stale) == [
-        "OPERATIONAL_STEP_NEWS_DIGEST_PARTIAL"
-    ]
+    assert service._step_blockers("NEWS_DIGEST", stale) == ["OPERATIONAL_STEP_NEWS_DIGEST_PARTIAL"]
 
 
 def test_expected_pit_research_block_is_not_an_operational_failure() -> None:
@@ -708,14 +889,57 @@ def test_unsafe_research_data_block_remains_operationally_visible() -> None:
     }
 
     assert service._research_data_blocked_expected(payload) is False
-    assert service._step_blockers("RESEARCH", payload) == [
-        "OPERATIONAL_STEP_RESEARCH_DATA_BLOCKED"
-    ]
+    assert service._step_blockers("RESEARCH", payload) == ["OPERATIONAL_STEP_RESEARCH_DATA_BLOCKED"]
 
 
-def test_not_due_dynamic_does_not_erase_lifecycle_state(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_due_research_is_enqueued_without_blocking_money_loop(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
+    (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
+    monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
+    monkeypatch.setattr(service, "_refresh_due", lambda _value, **_kwargs: False)
+    monkeypatch.setattr(service, "_research_due", lambda _root: True)
+    calls: list[tuple[str, ...]] = []
+    launches: list[tuple[str, tuple[str, ...], int]] = []
+
+    def command_step(_root, arguments, **_kwargs):
+        calls.append(arguments)
+        return {"status": "GO", "schema": "step"}
+
+    def launch(_root, job_name, arguments, *, timeout_seconds):
+        launches.append((job_name, arguments, timeout_seconds))
+        return {
+            "schema": "stocks_background_job_v1",
+            "status": "ENQUEUED",
+            "job_name": job_name,
+            "money_loop_blocked": False,
+            "execution_authority": "NONE",
+            "broker_writes": 0,
+            "orders_generated": 0,
+        }
+
+    monkeypatch.setattr(service, "_command_step", command_step)
+    monkeypatch.setattr(service, "launch_background_job", launch)
+
+    cycle = service._cycle(
+        tmp_path,
+        service._state(tmp_path),
+        "SIGNALS_ONLY",
+    )
+
+    assert launches == [("research", ("autopilot", "run-once"), 7200)]
+    assert ("autopilot", "run-once") not in calls
+    assert cycle["research"]["status"] == "ENQUEUED"
+    assert cycle["research_background"]["status"] == "ENQUEUED"
+    assert cycle["scheduling"]["heavy_research_due"] is True
+    assert cycle["scheduling"]["heavy_research_execution"] == ("DETACHED_BACKGROUND_JOB")
+    assert cycle["scheduling"]["heavy_research_resource_priority"] == ("BELOW_NORMAL")
+    assert cycle["scheduling"]["heavy_research_can_block_money_loop"] is False
+    assert not any("RESEARCH" in blocker for blocker in cycle["blockers"])
+    assert cycle["execution_authority"] == "NONE"
+    assert cycle["broker_writes"] == 0
+
+
+def test_not_due_dynamic_does_not_erase_lifecycle_state(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".venv-ibkr" / "Scripts").mkdir(parents=True)
     (tmp_path / ".venv-ibkr" / "Scripts" / "python.exe").touch()
     monkeypatch.setattr(service, "phase1_freeze_status", _phase1)
@@ -726,9 +950,7 @@ def test_not_due_dynamic_does_not_erase_lifecycle_state(
         "_command_step",
         lambda *_args, **_kwargs: {"status": "GO", "schema": "step"},
     )
-    lifecycle_path = (
-        tmp_path / "data" / "operations" / "private" / "signal-states.json"
-    )
+    lifecycle_path = tmp_path / "data" / "operations" / "private" / "signal-states.json"
     lifecycle_path.parent.mkdir(parents=True)
     lifecycle_path.write_text(
         json.dumps({"states": {"STRATEGY:TEST": "BUY"}}),
@@ -744,7 +966,7 @@ def test_not_due_dynamic_does_not_erase_lifecycle_state(
     )
 
     assert result["status"] == "GO"
-    assert result["cycles"][0]["dynamic"]["status"] == "NOT_DUE"
+    assert result["cycles"][0]["dynamic"]["status"] == ("BACKGROUND_DELEGATED")
     assert result["cycles"][0]["signal_lifecycle"]["status"] == "NOT_DUE"
     persisted = json.loads(lifecycle_path.read_text(encoding="utf-8"))
     assert persisted["states"] == {"STRATEGY:TEST": "BUY"}
@@ -757,9 +979,43 @@ def test_explicit_component_go_marker_is_success() -> None:
     assert service._is_success_status({"status": "NO_GO"}) is False
 
 
-def test_paper_activation_requires_canary_and_exact_phrase(
-    tmp_path: Path, monkeypatch
-) -> None:
+def _flat_read_only_reconciliation() -> dict[str, object]:
+    return {
+        "schema": "phase9_reconciliation_audit_v1",
+        "status": "NO_GO",
+        "reconciliation_status": "LOCAL_ORDER_MISSING_AT_BROKER",
+        "broker_observation_status": "GO",
+        "broker_snapshot_status": "BROKER_SNAPSHOT_OBSERVED",
+        "operational_broker_state_status": "CURRENT_BROKER_FLAT_READ_ONLY",
+        "canonical_execution_evidence_status": ("INCOMPLETE_HISTORICAL_EXECUTION_CHAIN"),
+        "historical_orphan_quarantine_status": ("HISTORICAL_ORPHANS_QUARANTINED_FAIL_CLOSED"),
+        "broker_position_count": 0,
+        "broker_open_order_count": 0,
+        "read_only_request_counters": {
+            "read_only_account_summary_requests": 1,
+            "read_only_all_api_open_order_requests": 1,
+            "read_only_execution_requests": 1,
+            "read_only_position_requests": 1,
+            "read_only_same_client_open_order_requests": 1,
+        },
+        "broker_write_counters": {
+            "auto_bind_order_calls": 0,
+            "cancel_order_calls": 0,
+            "exercise_option_calls": 0,
+            "global_cancel_calls": 0,
+            "historical_data_calls": 0,
+            "market_data_calls": 0,
+            "place_order_calls": 0,
+            "request_order_id_calls": 0,
+        },
+        "execution_authority": "NONE",
+        "paper_place_order_calls": 0,
+        "live_place_order_calls": 0,
+        "automatic_submission": False,
+    }
+
+
+def test_paper_activation_requires_canary_and_exact_phrase(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "_execution_preflight",
@@ -781,15 +1037,10 @@ def test_paper_activation_requires_canary_and_exact_phrase(
 
 def test_live_mode_cannot_be_selected_without_activation(tmp_path: Path) -> None:
     state = service._state(tmp_path)
-    assert (
-        service._effective_mode(state, "LIVE_CANARY_AUTOMATIC")
-        == "SIGNALS_ONLY"
-    )
+    assert service._effective_mode(state, "LIVE_CANARY_AUTOMATIC") == "SIGNALS_ONLY"
 
 
-def test_bounded_runner_uses_persisted_requested_mode(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_bounded_runner_uses_persisted_requested_mode(tmp_path: Path, monkeypatch) -> None:
     state = service._state(tmp_path)
     state.update(
         enabled=True,
@@ -934,10 +1185,7 @@ def test_signal_lifecycle_only_marks_false_to_true_as_fresh(
     assert first["fresh_entry_count"] == 1
     assert first["rows"][0]["lifecycle_status"] == "FRESH_ENTRY"
     assert second["fresh_entry_count"] == 0
-    assert (
-        second["rows"][0]["lifecycle_status"]
-        == "ACTIVE_STATE_NO_NEW_ENTRY"
-    )
+    assert second["rows"][0]["lifecycle_status"] == "ACTIVE_STATE_NO_NEW_ENTRY"
 
 
 def test_paper_close_route_never_bypasses_phase9(tmp_path: Path) -> None:
@@ -955,11 +1203,7 @@ def test_paper_close_route_never_bypasses_phase9(tmp_path: Path) -> None:
 
 def test_machine_stop_publishes_stopped_heartbeat(tmp_path: Path) -> None:
     result = service.machine_command(tmp_path, "stop")
-    heartbeat = json.loads(
-        (tmp_path / "runtime" / "heartbeat.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    heartbeat = json.loads((tmp_path / "runtime" / "heartbeat.json").read_text(encoding="utf-8"))
     assert result["enabled"] is False
     assert heartbeat["runtime_status"] == "STOPPED"
     assert heartbeat["execution_authority"] == "NONE"
@@ -967,9 +1211,7 @@ def test_machine_stop_publishes_stopped_heartbeat(tmp_path: Path) -> None:
 
 def test_phase9_operator_wrapper_uses_only_canonical_cli() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    source = (
-        project_root / "scripts" / "run_phase9_manual_canary.ps1"
-    ).read_text(encoding="utf-8")
+    source = (project_root / "scripts" / "run_phase9_manual_canary.ps1").read_text(encoding="utf-8")
 
     assert '"main.py"' in source
     assert '"ibkr", "phase9", "prepare"' in source
@@ -996,12 +1238,13 @@ def test_phase9_operator_wrapper_uses_only_canonical_cli() -> None:
 
 def test_windows_stop_script_bounds_exact_runtime_child_cleanup() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    source = (project_root / "scripts" / "stop_bot.ps1").read_text(
-        encoding="utf-8"
-    )
+    source = (project_root / "scripts" / "stop_bot.ps1").read_text(encoding="utf-8")
 
     assert "$ResolvedMain = [regex]::Escape((Resolve-Path $Main).Path)" in source
     assert '$_.CommandLine -match "\\srun\\s+--mode\\s"' in source
     assert "$Deadline = (Get-Date).AddSeconds(75)" in source
     assert "Stop-Process -Id $_.ProcessId -Force" in source
     assert "remaining_runtime_processes = 0" in source
+    assert '"src\\stocks\\operations\\background_jobs.py"' in source
+    assert "--stop-all" in source
+    assert "remaining_background_workers" in source

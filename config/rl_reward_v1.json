@@ -1,0 +1,23 @@
+{
+  "schema": "rl_reward_config_v1",
+  "version": "RL_REWARD_V1",
+  "status": "FROZEN",
+  "return_scale": 100.0,
+  "loss_aversion": 1.5,
+  "realized_profit_weight": 0.15,
+  "risk_adjusted_weight": 0.1,
+  "good_management_weight": 0.1,
+  "skip_quality_weight": 0.05,
+  "transaction_cost_weight": 1.0,
+  "drawdown_weight": 2.5,
+  "drawdown_convex_power": 2.0,
+  "downside_weight": 1.25,
+  "excessive_risk_weight": 2.0,
+  "concentration_weight": 0.75,
+  "turnover_weight": 0.35,
+  "bad_execution_weight": 1.0,
+  "invalid_action_penalty": 2.0,
+  "episode_end_open_position_penalty": 0.2,
+  "risk_normalizer": 0.01,
+  "component_clip": 10.0
+}

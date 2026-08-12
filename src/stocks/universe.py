@@ -14,6 +14,9 @@ import pandas as pd
 BROAD_UNIVERSE_PATH = Path(
     "config/universes/broad_multi_asset_v1.json"
 )
+COMMODITY_PRODUCT_ATTESTATIONS_PATH = Path(
+    "config/universes/commodity_product_attestations_v1.json"
+)
 SECURITY_MASTER_PATH = Path(
     "data/research/phase11_4/private/security-master.parquet"
 )
@@ -150,8 +153,9 @@ def broad_commodity_symbols(project_root: Path) -> set[str]:
 
 def broad_asset_metadata(
     project_root: Path,
-) -> dict[str, dict[str, str]]:
-    return {
+) -> dict[str, dict[str, Any]]:
+    attestations = commodity_product_attestations(project_root)
+    metadata: dict[str, dict[str, Any]] = {
         row["symbol"]: {
             key: row[key]
             for key in (
@@ -170,6 +174,83 @@ def broad_asset_metadata(
         }
         for row in broad_universe(project_root)
     }
+    for symbol, row in metadata.items():
+        attestation = attestations.get(symbol, {})
+        physical_claim = row["commodity_exposure_type"] == "PHYSICAL_COMMODITY"
+        row.update(
+            {
+                "product_identity_status": str(
+                    attestation.get("structure_status")
+                    or (
+                        "UNVERIFIED_PHYSICAL_STRUCTURE"
+                        if physical_claim
+                        else "RESEARCH_CLASSIFICATION_ONLY"
+                    )
+                ),
+                "physical_structure_verified": bool(
+                    attestation.get("currently_verified")
+                ),
+                "product_identity_screened_at": attestation.get("screened_at"),
+                "product_identity_expires_at": attestation.get("expires_at"),
+                "product_identity_source_count": int(
+                    attestation.get("source_count") or 0
+                ),
+                "shariah_product_status": str(
+                    attestation.get("shariah_product_status")
+                    or "ATTESTATION_REQUIRED"
+                ),
+            }
+        )
+    return metadata
+
+
+def commodity_product_attestations(
+    project_root: Path,
+    *,
+    observed_at: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    path = project_root / COMMODITY_PRODUCT_ATTESTATIONS_PATH
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("attestations", [])
+    if not isinstance(rows, list):
+        raise ValueError("commodity product attestations must be a list")
+    now = observed_at or datetime.now(UTC)
+    result: dict[str, dict[str, Any]] = {}
+    for raw in rows:
+        if not isinstance(raw, dict):
+            raise ValueError("commodity product attestation must be an object")
+        symbol = str(raw.get("symbol") or "").upper()
+        if not symbol or symbol in result:
+            raise ValueError(f"invalid duplicate product attestation: {symbol}")
+        screened = pd.to_datetime(raw.get("screened_at"), utc=True, errors="coerce")
+        expires = pd.to_datetime(raw.get("expires_at"), utc=True, errors="coerce")
+        sources = raw.get("sources", [])
+        if pd.isna(screened) or pd.isna(expires) or screened >= expires:
+            raise ValueError(f"invalid product attestation window: {symbol}")
+        if not isinstance(sources, list) or not sources:
+            raise ValueError(f"official product evidence required: {symbol}")
+        current = screened.to_pydatetime() <= now <= expires.to_pydatetime()
+        verified = (
+            current
+            and raw.get("structure_status") == "VERIFIED_PHYSICAL_STRUCTURE"
+            and raw.get("commodity_exposure_type") == "PHYSICAL_COMMODITY"
+        )
+        result[symbol] = {
+            **raw,
+            "screened_at": screened.isoformat(),
+            "expires_at": expires.isoformat(),
+            "source_count": len(sources),
+            "currently_verified": verified,
+            "attestation_window_status": "CURRENT" if current else "EXPIRED",
+            "shariah_product_eligible": (
+                current
+                and raw.get("shariah_product_status")
+                == "SHARIAH_PRODUCT_ELIGIBLE_PIT"
+            ),
+        }
+    return result
 
 
 def commodity_producer_metadata(symbol: str) -> dict[str, str]:
@@ -186,6 +267,23 @@ def commodity_producer_metadata(symbol: str) -> dict[str, str]:
 
 def broad_universe_status(project_root: Path) -> dict[str, Any]:
     rows = broad_universe(project_root)
+    attestations = commodity_product_attestations(project_root)
+    physical_claims = [
+        row
+        for row in rows
+        if row["commodity_exposure_type"] == "PHYSICAL_COMMODITY"
+    ]
+    current_physical = [
+        row
+        for row in physical_claims
+        if attestations.get(row["symbol"], {}).get("currently_verified") is True
+    ]
+    shariah_product_eligible = [
+        row
+        for row in physical_claims
+        if attestations.get(row["symbol"], {}).get("shariah_product_eligible")
+        is True
+    ]
     return {
         "schema": "broad_multi_asset_universe_status_v1",
         "status": "GO" if rows else "NO_DATA",
@@ -208,6 +306,16 @@ def broad_universe_status(project_root: Path) -> dict[str, Any]:
                 if row["asset_type"].startswith("COMMODITY_")
             }
         ),
+        "physical_commodity_claim_count": len(physical_claims),
+        "current_physical_structure_verified_count": len(current_physical),
+        "current_physical_structure_verified_symbols": sorted(
+            row["symbol"] for row in current_physical
+        ),
+        "shariah_product_eligible_count": len(shariah_product_eligible),
+        "shariah_product_review_required_count": (
+            len(physical_claims) - len(shariah_product_eligible)
+        ),
+        "physical_structure_does_not_imply_shariah_eligibility": True,
         "automatic_execution_authority": "NONE",
         "broker_calls": 0,
         "orders_generated": 0,

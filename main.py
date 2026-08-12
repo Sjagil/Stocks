@@ -135,12 +135,28 @@ from stocks.live.autonomous_policy import (  # noqa: E402
 )
 from stocks.notifications import telegram_command  # noqa: E402
 from stocks.p3.publisher import publish_p3_evidence  # noqa: E402
+from stocks.p3.io import read_json as read_artifact_json  # noqa: E402
+from stocks.p4.forward import preregister_phase11_14_candidates  # noqa: E402
+from stocks.p4.publisher import publish_p4_readiness  # noqa: E402
+from stocks.p4.data import PITDataCatalog  # noqa: E402
+from stocks.ai.intelligence import (  # noqa: E402
+    enqueue_refresh_if_due,
+    refresh_decision_intelligence,
+    refresh_if_due,
+)
+from stocks.ai.reference_knowledge import (  # noqa: E402
+    publish_reference_knowledge,
+)
+from stocks.rl.experience import ExperienceStore  # noqa: E402
+from stocks.rl.supervisor import run_supervisor_cycle  # noqa: E402
+from stocks.rl.training import train_default_experiment  # noqa: E402
 from stocks.operations import (  # noqa: E402
     MACHINE_MODES,
     execution_command as operations_execution_command,
     launch_command,
     machine_command,
     positions_command,
+    run_primary_refresh,
 )
 from stocks.readiness import (  # noqa: E402
     comprehensive_data_readiness,
@@ -150,6 +166,7 @@ from stocks.readiness import (  # noqa: E402
     system_self_test,
 )
 from stocks.signals import (  # noqa: E402
+    active_swing_scan,
     promote_manual_signals,
     publish_top_signals,
     signal_asset,
@@ -194,7 +211,6 @@ from stocks.data.multitimeframe import (  # noqa: E402
 )
 from stocks.data.corporate_actions import (  # noqa: E402
     CorporateActionLayout,
-    collect_corporate_actions_for_universe,
     corporate_action_schema,
     corporate_action_status,
     validate_corporate_action_cache,
@@ -206,13 +222,14 @@ from stocks.data.fx import (  # noqa: E402
 )
 from stocks.data.phase5_1 import (  # noqa: E402
     build_total_returns_for_universe_v1_1,
+    collect_corporate_actions_for_universe_v1_1,
     collect_fx_for_universe_v1_1,
     fx_status_v1_1,
+    total_return_status_v1_1,
 )
 from stocks.data.total_returns import (  # noqa: E402
     TotalReturnLayout,
     total_return_schema,
-    total_return_status,
     validate_total_return_cache,
 )
 from stocks.domain.assets import AssetClass, IbkrSecurityType  # noqa: E402
@@ -552,6 +569,35 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p3_subparsers = p3.add_subparsers(dest="p3_command", required=True)
     p3_subparsers.add_parser("publish")
+
+    p4 = subparsers.add_parser(
+        "p4", help="Publish point-in-time data, forward and RL evidence readiness."
+    )
+    p4_subparsers = p4.add_subparsers(dest="p4_command", required=True)
+    for command in ("publish", "preregister", "audit-data"):
+        p4_subparsers.add_parser(command)
+
+    ai = subparsers.add_parser(
+        "ai", help="Run the causal shadow decision-intelligence layer."
+    )
+    ai_subparsers = ai.add_subparsers(dest="ai_command", required=True)
+    for command in (
+        "refresh",
+        "refresh-if-due",
+        "enqueue-refresh",
+        "status",
+        "references",
+    ):
+        ai_subparsers.add_parser(command)
+
+    rl = subparsers.add_parser(
+        "rl", help="Run the shadow-only reinforcement-learning decision layer."
+    )
+    rl_subparsers = rl.add_subparsers(dest="rl_command", required=True)
+    rl_train = rl_subparsers.add_parser("train")
+    rl_train.add_argument("--timesteps", type=int)
+    for command in ("cycle", "status", "experience-status"):
+        rl_subparsers.add_parser(command)
 
     config = subparsers.add_parser(
         "config", help="Validate the canonical fail-closed configuration."
@@ -1699,6 +1745,8 @@ def build_parser() -> argparse.ArgumentParser:
         "normalized-opportunities",
         "overlap",
         "targets",
+        "swing-product",
+        "rl-rotation",
         "p1",
     ):
         portfolio_subparsers.add_parser(command)
@@ -1951,6 +1999,14 @@ def build_parser() -> argparse.ArgumentParser:
     signal_scan_parser.add_argument("--timeframe", default=None)
     signal_scan_parser.add_argument("--asset-class", default=None)
     signal_scan_parser.add_argument("--maximum-signals", type=int, default=5000)
+    active_swing_scan_parser = signals_subparsers.add_parser(
+        "active-swing-refresh"
+    )
+    active_swing_scan_parser.add_argument(
+        "--symbols",
+        default="",
+        help="Comma-separated bounded symbol set; defaults to the full local universe.",
+    )
     signal_asset_parser = signals_subparsers.add_parser("asset")
     signal_asset_parser.add_argument("--symbol", required=True)
     for command in ("watchlist", "active", "expired", "export", "status"):
@@ -2326,6 +2382,11 @@ def build_parser() -> argparse.ArgumentParser:
     canonical_run.add_argument("--max-cycles", type=int, default=1_440)
     canonical_run.add_argument("--interval-seconds", type=int, default=60)
 
+    subparsers.add_parser(
+        "primary-refresh",
+        help="Run the detached non-money-loop primary context refresh.",
+    )
+
     launch = subparsers.add_parser(
         "launch",
         help="Fail-closed canonical runtime and live-readiness controls.",
@@ -2368,6 +2429,63 @@ def main(argv: list[str] | None = None) -> int:
         report = publish_p3_evidence(PROJECT_ROOT)
         _print_json(report)
         return 0 if report["status"] == "GO" else 2
+
+    if args.command == "p4":
+        if args.p4_command == "publish":
+            report = publish_p4_readiness(PROJECT_ROOT)
+        elif args.p4_command == "preregister":
+            report = preregister_phase11_14_candidates(PROJECT_ROOT)
+        else:
+            report = PITDataCatalog(PROJECT_ROOT).audit()
+        _print_json(report)
+        return 0 if report.get("status") not in {"NO_GO", "BLOCKED"} else 2
+
+    if args.command == "ai":
+        if args.ai_command == "refresh":
+            report = refresh_decision_intelligence(PROJECT_ROOT)
+            report = {
+                "status": report["tournament"]["promotion_status"],
+                **report,
+            }
+        elif args.ai_command == "refresh-if-due":
+            report = refresh_if_due(PROJECT_ROOT)
+        elif args.ai_command == "enqueue-refresh":
+            report = enqueue_refresh_if_due(PROJECT_ROOT)
+        elif args.ai_command == "references":
+            report = publish_reference_knowledge(PROJECT_ROOT)
+        else:
+            report = read_artifact_json(
+                PROJECT_ROOT
+                / "output/ai/decision-intelligence/model-manifest.json"
+            )
+            if not report:
+                report = {
+                    "status": "NOT_RUN",
+                    "authority": "SHADOW_ONLY",
+                    "execution_authority": "NONE",
+                }
+        _print_json(report)
+        return 0 if report.get("status") not in {"FAILED", "BLOCKED"} else 2
+
+    if args.command == "rl":
+        if args.rl_command == "train":
+            report = train_default_experiment(
+                PROJECT_ROOT, total_timesteps=getattr(args, "timesteps", None)
+            )
+        elif args.rl_command == "cycle":
+            report = run_supervisor_cycle(PROJECT_ROOT)
+        elif args.rl_command == "experience-status":
+            report = ExperienceStore(PROJECT_ROOT).publish_status()
+        else:
+            report = read_artifact_json(PROJECT_ROOT / "output/rl/status.json")
+            if not report:
+                report = {
+                    "status": "NOT_RUN",
+                    "rl_mode": "SHADOW_ONLY",
+                    "execution_authority": "NONE",
+                }
+        _print_json(report)
+        return 0 if report.get("status") not in {"NO_GO", "BLOCKED", "FAILED"} else 2
 
     if args.command == "ui":
         report = ui_command(
@@ -2473,6 +2591,11 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(report)
         return 0 if report["status"] in {"GO", "DEGRADED"} else 2
 
+    if args.command == "primary-refresh":
+        report = run_primary_refresh(PROJECT_ROOT)
+        _print_json(report)
+        return 0 if report["status"] in {"GO", "DEGRADED", "SKIPPED_BUSY"} else 2
+
     if args.command == "launch":
         report = launch_command(
             PROJECT_ROOT,
@@ -2513,6 +2636,16 @@ def main(argv: list[str] | None = None) -> int:
                 timeframe=args.timeframe,
                 asset_class=args.asset_class,
                 maximum_signals=args.maximum_signals,
+            )
+        elif args.signals_command == "active-swing-refresh":
+            active_swing_symbols = tuple(
+                item.strip()
+                for item in str(args.symbols).split(",")
+                if item.strip()
+            )
+            report = active_swing_scan(
+                PROJECT_ROOT,
+                symbols=active_swing_symbols or None,
             )
         elif args.signals_command == "asset":
             report = signal_asset(PROJECT_ROOT, args.symbol)
@@ -3931,7 +4064,7 @@ def main(argv: list[str] | None = None) -> int:
                         }
                     )
                     return 2
-                report = collect_corporate_actions_for_universe(
+                report = collect_corporate_actions_for_universe_v1_1(
                     project_root=PROJECT_ROOT,
                     rows=read_contract_cache_rows(contract_layout),
                     start=_parse_iso_date(args.start),
@@ -3998,7 +4131,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_json(total_return_schema())
                 return 0
             if args.total_returns_command == "status":
-                report = total_return_status(total_return_layout)
+                report = total_return_status_v1_1(total_return_layout)
                 report["phase1"] = phase1.as_dict()
                 _print_json(report)
                 return 0 if report["status"] == "READY" else 2

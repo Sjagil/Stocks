@@ -14,6 +14,7 @@ from stocks.data.multitimeframe import (
 
 
 SIGNAL_MAX_AGES = {
+    "15m": timedelta(hours=4),
     "1h": timedelta(hours=12),
     "2h": timedelta(hours=24),
     "4h": timedelta(days=3),
@@ -22,6 +23,7 @@ SIGNAL_MAX_AGES = {
     "1mo": timedelta(days=62),
 }
 INTRADAY_BAR_LENGTH = {
+    "15m": timedelta(minutes=15),
     "1h": timedelta(hours=1),
     "2h": timedelta(hours=2),
     "4h": timedelta(hours=4),
@@ -73,7 +75,7 @@ def evaluate_signal_freshness(
                 "reason": "UNDERLYING_CLOSED_BAR_STALE",
                 **_public_session_context(session_context),
             }
-        if effective < observed:
+        if effective < observed and not bool(row.get("strict_expiration")):
             if session_context.get("market_open") is False:
                 next_close = _next_relevant_bar_close(
                     observed,
@@ -163,6 +165,7 @@ def _calendar(calendar_code: str) -> Any:
 def _timeframe(value: Any) -> str:
     timeframe = str(value or "").strip().lower()
     return {
+        "15min": "15m",
         "60m": "1h",
         "1hour": "1h",
         "2hour": "2h",

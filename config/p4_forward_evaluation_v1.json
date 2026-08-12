@@ -1,0 +1,39 @@
+{
+  "schema": "p4_forward_evaluation_policy_v1",
+  "version": "1.0.0",
+  "status": "FROZEN",
+  "comparison_clock": "SAME_FORWARD_DECISION_TIMESTAMP",
+  "candidate_baselines": [
+    "PASSIVE_UNDERLYING_BUY_AND_HOLD",
+    "DO_NOTHING_CASH"
+  ],
+  "minimum_calendar_days": 90,
+  "minimum_closed_episodes": 100,
+  "statistical_gates": {
+    "dsr_probability_minimum": 0.95,
+    "cscv_pbo_maximum": 0.20,
+    "white_reality_check_pvalue_maximum": 0.05,
+    "hansen_spa_pvalue_maximum": 0.05,
+    "benjamini_hochberg_fdr": 0.05
+  },
+  "economic_gates": {
+    "net_after_commission_spread_slippage_fx_impact_positive": true,
+    "stable_across_regimes": true,
+    "stable_across_neighboring_parameters": true,
+    "forward_effect_size_and_uncertainty_required": true
+  },
+  "data_gates_required": [
+    "PIT_DATA_GO",
+    "SURVIVORSHIP_GO",
+    "SHARIAH_PIT_GO",
+    "LIVE_QUOTE_GO"
+  ],
+  "historical_backfill_counts_as_forward": false,
+  "forced_trade_allowed": false,
+  "threshold_relaxation_allowed": false,
+  "zero_finalists_is_valid": true,
+  "cash_is_valid_outcome": true,
+  "automatic_promotion": false,
+  "execution_authority": "NONE",
+  "money_control": false
+}

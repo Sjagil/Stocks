@@ -54,12 +54,54 @@ def _bars(interval: str, periods: int, frequency: str) -> pd.DataFrame:
 
 def test_interval_alias_is_month_not_minute() -> None:
     assert canonical_interval("1m") == "1mo"
-    assert parse_intervals("1h,2h,4h,6h,12h,1d,1w,1m") == [
-        "1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo"
+    assert parse_intervals("15m,1h,2h,4h,6h,12h,1d,1w,1m") == [
+        "15m", "1h", "2h", "4h", "6h", "12h", "1d", "1w", "1mo"
     ]
-    for forbidden in ("1min", "5m", "15m", "30m"):
+    assert canonical_interval("15m") == "15m"
+    for forbidden in ("1min", "5m", "30m"):
         with pytest.raises(ValueError, match="FORBIDDEN_SWING_TIMEFRAME"):
             canonical_interval(forbidden)
+
+
+def test_fifteen_minute_bars_are_closed_and_freshness_gated() -> None:
+    observed_at = datetime(2026, 1, 5, 15, 5, tzinfo=UTC)
+    frame = _bars("15m", 3, "15min")
+    closed = _closed_intraday_bars(
+        frame,
+        interval="15m",
+        observed_at=observed_at,
+    )
+    assert closed["timestamp_utc"].tolist() == [
+        pd.Timestamp("2026-01-05T14:30:00Z"),
+        pd.Timestamp("2026-01-05T14:45:00Z"),
+        pd.Timestamp("2026-01-05T15:00:00Z"),
+    ]
+    assert bar_freshness(
+        closed["timestamp_utc"].max(),
+        interval="15m",
+        observed_at=observed_at,
+    )["status"] == "FRESH_CLOSED_BAR"
+
+
+def test_validation_includes_first_class_fifteen_minute_partition(
+    tmp_path: Path,
+) -> None:
+    layout = MultiTimeframeLayout(tmp_path)
+    path = layout.bars_path(
+        provider="TEST",
+        symbol="SPY",
+        interval="15m",
+        source_interval="15m",
+    )
+    path.parent.mkdir(parents=True)
+    _bars("15m", 3, "15min").to_parquet(path, index=False)
+    report = validate_multitimeframe_cache(
+        tmp_path,
+        as_of=datetime(2026, 1, 5, 15, 30, tzinfo=UTC),
+    )
+    assert report["status"] == "GO"
+    assert report["intervals_present"] == ["15m"]
+    assert report["forbidden_interval_quarantined_file_count"] == 0
 
 
 def test_symbol_and_interval_requests_are_bounded() -> None:

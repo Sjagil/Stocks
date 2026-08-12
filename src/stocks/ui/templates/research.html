@@ -10,4 +10,8 @@
   <section class="panel"><div class="panel-header"><div><h2>Phase 11.14</h2><p>Current integrated evidence</p></div></div><pre class="json-view">{{ viewmodel.phase11_14|tojson(indent=2) }}</pre></section>
   <section class="panel"><div class="panel-header"><div><h2>Autopilot Leaderboard</h2><p>Research-only registry</p></div></div><pre class="json-view">{{ viewmodel.leaderboard|tojson(indent=2) }}</pre></section>
 </div>
+<div class="split-layout equal">
+  <section class="panel"><div class="panel-header"><div><h2>RL Shadow Supervisor</h2><p>Policy health, rewards and masked decisions</p></div></div><pre class="json-view">{{ viewmodel.rl|tojson(indent=2) }}</pre></section>
+  <section class="panel"><div class="panel-header"><div><h2>P4 Readiness</h2><p>Internal, economic and external evidence gates</p></div></div><pre class="json-view">{{ viewmodel.p4|tojson(indent=2) }}</pre></section>
+</div>
 {% endblock %}

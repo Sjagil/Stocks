@@ -75,6 +75,9 @@ def test_eodhd_normalizes_equity_etf_and_commodity_proxy() -> None:
         assert tuple(frame.columns) == CANONICAL_MARKET_DATA_COLUMNS
         assert frame.iloc[0]["asset_class"] == asset_class.value
         assert frame.iloc[0]["close"] == pytest.approx(10.5)
+        assert frame.iloc[0]["open"] == pytest.approx(10.0 * 10.5 / 11.0)
+        assert frame.iloc[0]["high"] == pytest.approx(12.0 * 10.5 / 11.0)
+        assert frame.iloc[0]["low"] == pytest.approx(9.0 * 10.5 / 11.0)
 
 
 def test_fred_preserves_release_availability_and_negative_macro_values() -> None:
@@ -126,6 +129,77 @@ def test_fx_bitvavo_and_coinmarketcap_adapters() -> None:
     assert fx.iloc[0]["symbol"] == "USDEUR"
     assert crypto.iloc[0]["symbol"] == "BTCEUR"
     assert caps.iloc[0]["market_cap"] == pytest.approx(2_000_000_000_000)
+
+
+def test_coinmarketcap_v3_symbol_mapping_with_list_payload() -> None:
+    frame = CoinMarketCapAdapter().normalize(
+        {
+            "data": {
+                "BTC": [
+                    {
+                        "symbol": "BTC",
+                        "quote": {
+                            "USD": {
+                                "price": 100_000,
+                                "volume_24h": 50_000_000,
+                                "market_cap": 2_000_000_000_000,
+                                "last_updated": "2026-01-05T10:00:00Z",
+                            }
+                        },
+                    }
+                ]
+            }
+        },
+        received_at=RECEIVED,
+    )
+    assert len(frame) == 1
+    assert frame.iloc[0]["symbol"] == "BTC"
+    assert frame.iloc[0]["close"] == pytest.approx(100_000)
+
+
+def test_coinmarketcap_v3_quote_list_selects_highest_ranked_symbol() -> None:
+    frame = CoinMarketCapAdapter().normalize(
+        {
+            "data": [
+                {
+                    "id": 999,
+                    "symbol": "BTC",
+                    "cmc_rank": 999,
+                    "is_active": 1,
+                    "quote": [{"symbol": "USD", "price": 1.0}],
+                },
+                {
+                    "id": 1,
+                    "symbol": "BTC",
+                    "cmc_rank": 1,
+                    "is_active": 1,
+                    "quote": [{"symbol": "USD", "price": 100_000.0}],
+                },
+            ]
+        },
+        received_at=RECEIVED,
+    )
+    assert len(frame) == 1
+    assert frame.iloc[0]["close"] == pytest.approx(100_000.0)
+
+
+def test_cleaner_accepts_mixed_iso_fractional_second_precision() -> None:
+    first = _row(
+        "A",
+        "2026-01-01T00:00:00.123456+00:00",
+        10.0,
+        available_at="2026-01-02T00:00:00.123456+00:00",
+    )
+    second = _row(
+        "B",
+        "2026-01-01T00:00:00+00:00",
+        20.0,
+        available_at="2026-01-02T00:00:00+00:00",
+    )
+    frame = clean_market_data([first, second])
+    assert len(frame) == 2
+    assert frame["timestamp"].notna().all()
+    assert frame["available_at"].notna().all()
 
 
 def test_cleaner_rejects_bad_ohlc_and_future_leakage() -> None:

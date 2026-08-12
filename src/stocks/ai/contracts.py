@@ -108,6 +108,57 @@ class ModelPrediction(StrictContract):
         return self
 
 
+class ModelEvidence(StrictContract):
+    """Typed, non-authoritative model evidence for native decision consumers."""
+
+    schema_version: Literal["ai_model_evidence_v1"] = "ai_model_evidence_v1"
+    evidence_id: str
+    model_id: str = "GLOBAL_DECISION_INTELLIGENCE"
+    model_version: str
+    symbol: str
+    as_of: datetime
+    feature_timestamp: datetime
+    probability_positive_net: float = Field(ge=0.0, le=1.0)
+    predicted_net_return: float
+    expected_win: float
+    expected_loss: float
+    conservative_expected_value: float
+    uncertainty: float = Field(ge=0.0, le=1.0)
+    model_disagreement: float = Field(default=0.0, ge=0.0)
+    return_interval_lower_90: float | None = None
+    return_interval_upper_90: float | None = None
+    cross_sectional_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    meta_take: bool
+    abstained: bool
+    out_of_distribution: bool
+    validation_status: str
+    tournament_hash: str
+    feature_hash: str
+    authority: Literal["SHADOW_ONLY"] = "SHADOW_ONLY"
+    money_control: Literal[False] = False
+    mutates_financial_fields: Literal[False] = False
+    execution_authority: Literal["NONE"] = "NONE"
+
+    @field_validator("as_of", "feature_timestamp")
+    @classmethod
+    def _evidence_timestamp_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("timezone-aware timestamp required")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _feature_precedes_decision(self) -> ModelEvidence:
+        if self.feature_timestamp > self.as_of:
+            raise ValueError("feature timestamp cannot follow decision time")
+        if (
+            self.return_interval_lower_90 is not None
+            and self.return_interval_upper_90 is not None
+            and self.return_interval_lower_90 > self.return_interval_upper_90
+        ):
+            raise ValueError("return interval bounds are inverted")
+        return self
+
+
 class ResearchHypothesis(StrictContract):
     schema_version: Literal["ai_research_hypothesis_v1"] = (
         "ai_research_hypothesis_v1"
@@ -289,6 +340,7 @@ __all__ = [
     "FORBIDDEN_AI_POWERS",
     "FeatureDefinition",
     "ModelLifecycle",
+    "ModelEvidence",
     "ModelPrediction",
     "ModelRecord",
     "NLPEvent",

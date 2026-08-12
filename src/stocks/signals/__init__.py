@@ -1,4 +1,5 @@
 from stocks.signals.service import (
+    active_swing_scan,
     promote_manual_signals,
     signal_asset,
     signal_explain,
@@ -13,6 +14,7 @@ from stocks.signals.service import (
 from stocks.signals.top5 import publish_top_signals
 
 __all__ = [
+    "active_swing_scan",
     "promote_manual_signals",
     "publish_top_signals",
     "signal_asset",

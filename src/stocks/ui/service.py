@@ -990,6 +990,10 @@ class ViewModelStore:
             / "selective_ml"
             / "status.json"
         )
+        rl_status = self._json(PUBLIC_ROOT / "rl" / "status.json")
+        p4_readiness = self._json(
+            PUBLIC_ROOT / "verification" / "p4-readiness.json"
+        )
         rejected_shadow = self._json(
             PUBLIC_ROOT
             / "research"
@@ -1380,6 +1384,59 @@ class ViewModelStore:
                     "ml_reinforcement_learning_status": selective_ml.get(
                         "reinforcement_learning_status",
                         "DISABLED_PREMATURE_SAMPLE_SIZE",
+                    )
+                    if not rl_status
+                    else rl_status.get("status", "NOT_RUN"),
+                    "rl_status": rl_status.get("status", "NOT_RUN"),
+                    "rl_mode": rl_status.get("rl_mode", "DISABLED"),
+                    "rl_active_policy": rl_status.get("active_policy"),
+                    "rl_challenger_policy": rl_status.get(
+                        "challenger_policy"
+                    ),
+                    "rl_last_inference": rl_status.get("last_inference"),
+                    "rl_episode_count": rl_status.get("episodes", 0),
+                    "rl_closed_episode_count": rl_status.get(
+                        "closed_episodes", 0
+                    ),
+                    "rl_mean_reward": rl_status.get("mean_reward"),
+                    "rl_rolling_reward": rl_status.get("rolling_reward"),
+                    "rl_net_pnl": rl_status.get("net_pnl"),
+                    "rl_maximum_drawdown": rl_status.get(
+                        "maximum_drawdown"
+                    ),
+                    "rl_policy_entropy": rl_status.get("policy_entropy"),
+                    "rl_action_distribution": rl_status.get(
+                        "action_distribution", {}
+                    ),
+                    "rl_trade_frequency": rl_status.get(
+                        "trade_frequency", 0.0
+                    ),
+                    "rl_skip_frequency": rl_status.get(
+                        "skip_frequency", 0.0
+                    ),
+                    "rl_promotion_status": rl_status.get(
+                        "promotion_status", "NOT_ELIGIBLE"
+                    ),
+                    "rl_next_evaluation": rl_status.get("next_evaluation"),
+                    "rl_next_training_check": rl_status.get(
+                        "next_training_check"
+                    ),
+                    "rl_training_status": rl_status.get(
+                        "training_status", {}
+                    ),
+                    "rl_alerts": rl_status.get("alerts", []),
+                    "rl_reward_by_regime": rl_status.get(
+                        "reward_by_regime", {}
+                    ),
+                    "p4_status": p4_readiness.get(
+                        "status", "NOT_PUBLISHED"
+                    ),
+                    "p4_complete": p4_readiness.get("p4_complete", False),
+                    "p4_external_gates": p4_readiness.get(
+                        "economic_and_external_gates", {}
+                    ),
+                    "p4_external_blockers": p4_readiness.get(
+                        "economic_and_external_blockers", []
                     ),
                     "rejected_shadow_status": rejected_shadow.get(
                         "status", "NOT_RUN"
@@ -3029,6 +3086,10 @@ class ViewModelStore:
         active_swing = self._json(
             PUBLIC_ROOT / "research" / "active_swing" / "status.json"
         )
+        rl_status = self._json(PUBLIC_ROOT / "rl" / "status.json")
+        p4_readiness = self._json(
+            PUBLIC_ROOT / "verification" / "p4-readiness.json"
+        )
         return self._sanitize(
             {
                 "schema": "ui_research_viewmodel_v1",
@@ -3046,6 +3107,8 @@ class ViewModelStore:
                 "leaderboard": _leaderboard_summary(leaderboard),
                 "functional_leaderboards": role_leaderboards,
                 "active_swing_sprints_3_6": active_swing,
+                "rl": rl_status,
+                "p4": p4_readiness,
                 "future_holdout": "COLLECTING_NOT_INDEPENDENT_YET",
                 "execution_authority": "NONE",
                 "broker_calls": 0,

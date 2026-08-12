@@ -36,7 +36,17 @@ def _observation(
     signal = {
         "strategy_id": strategy_id,
         "formula": "flow_consensus",
+        "strategy_family": "flow_consensus",
+        "strategy_dna_hash": "DNA-FLOW-CONSENSUS-1H",
         "timeframe": "1h",
+        "strategy_timeframe_contract": {
+            "schema": "active_swing_strategy_timeframe_contract_v1",
+            "entry_timeframe": "1h",
+            "setup_timeframe": "1h",
+            "context_timeframes": [],
+            "required_timeframes": ["1h"],
+        },
+        "model_version": "NO_ML_MODEL_DETERMINISTIC_SIGNAL_V1",
         "profile": "balanced",
         "asset_class": "STOCK",
         "symbol": "AAPL",
@@ -125,6 +135,15 @@ def test_forward_episode_uses_next_bar_entry_and_exit_with_costs(
         rel_tol=1e-12,
     )
     assert report["aggregate"]["sample_status"] == "INSUFFICIENT_SAMPLE"
+    assert report["architecture_binding_complete_count"] == 1
+    assert report["architecture_binding_incomplete_count"] == 0
+    assert report["architectures"][0]["entry_timeframe"] == "1h"
+    assert report["architectures"][0]["setup_timeframe"] == "1h"
+    assert report["architectures"][0]["context_timeframes"] == []
+    assert (
+        report["architectures"][0]["model_version"]
+        == "NO_ML_MODEL_DETERMINISTIC_SIGNAL_V1"
+    )
     assert report["FINANCIAL_FINALIST_GO"] is False
     assert report["EXECUTION_AUTHORITY"] == "NONE"
     assert report["broker_calls"] == 0

@@ -148,6 +148,88 @@ def test_long_action_uses_the_same_long_only_lifecycle(
     assert stored[0]["terminal_status"] == "TP1_EXIT"
 
 
+def test_fifteen_minute_candidate_uses_swing_horizon_not_next_bar_only(
+    tmp_path: Path, monkeypatch
+) -> None:
+    row = _episode()
+    row["timeframe"] = "15m"
+    _write_episode(tmp_path, row)
+    frame = _frame(
+        [
+            ("2026-08-03T10:15:00Z", 100, 103, 99, 102),
+            ("2026-08-03T10:30:00Z", 102, 106, 101, 105),
+            ("2026-08-03T10:45:00Z", 105, 109, 104, 108),
+            ("2026-08-03T11:00:00Z", 108, 111, 107, 110),
+        ]
+    )
+    monkeypatch.setattr(
+        outcomes,
+        "_load_current_frames",
+        lambda *_args, **_kwargs: {"15m": {"AAPL": frame}},
+    )
+
+    report = outcomes.settle_entry_episodes(tmp_path, observed_at=NOW)
+    stored = outcomes._read_jsonl(
+        tmp_path
+        / "data/market_context/private/entry-episode-outcomes.jsonl"
+    )
+
+    assert report["new_terminal_episode_count"] == 1
+    assert stored[0]["timeframe"] == "15m"
+    assert stored[0]["terminal_status"] == "TP1_EXIT"
+    assert stored[0]["holding_duration_seconds"] == 2700
+    assert stored[0]["time_to_first_barrier_seconds"] == 2700
+
+
+def test_15m_outcome_loader_uses_only_native_closed_known_bars(
+    tmp_path: Path,
+) -> None:
+    base = (
+        tmp_path
+        / "data/research/multitimeframe/private/provider=YFINANCE"
+        / "symbol=AAPL/interval=15m"
+    )
+    native = base / "source_interval=15m"
+    native.mkdir(parents=True)
+    rows = pd.DataFrame(
+        {
+            "timestamp_utc": [
+                "2026-08-03T10:15:00Z",
+                "2026-08-03T10:30:00Z",
+                "2026-08-03T10:45:00Z",
+            ],
+            "open": [100.0, 101.0, 102.0],
+            "high": [102.0, 103.0, 104.0],
+            "low": [99.0, 100.0, 101.0],
+            "close": [101.0, 102.0, 103.0],
+            "quality_status": ["VALIDATED_OHLC"] * 3,
+            "is_partial": [False, False, True],
+            "partial_bucket": [False, False, False],
+            "ingested_at": ["2026-08-03T11:00:00Z"] * 3,
+        }
+    )
+    rows.to_parquet(native / "bars.parquet", index=False)
+    derived = base / "source_interval=5m"
+    derived.mkdir(parents=True)
+    rows.assign(is_partial=False).to_parquet(
+        derived / "bars.parquet", index=False
+    )
+
+    frame = outcomes._load_single_provider_frame(
+        tmp_path,
+        symbol="AAPL",
+        timeframe="15m",
+        observed_at=datetime(2026, 8, 3, 12, tzinfo=UTC),
+    )
+
+    assert len(frame) == 2
+    assert frame.index.max() == pd.Timestamp("2026-08-03T10:30:00Z")
+    assert frame.attrs["provider"] == "YFINANCE"
+    assert frame.attrs["provider_selection_policy"] == (
+        "FRESHEST_QUALIFIED_PROVIDER_NO_BLEND"
+    )
+
+
 def test_contract_only_execution_veto_remains_research_observable(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -370,3 +452,44 @@ def test_legacy_episodes_and_their_outcomes_are_quarantined(
     assert report["episode_count"] == 1
     assert not outcome_path.exists()
     assert list((path.parent / "quarantine").glob("*.jsonl"))
+
+
+def test_completeness_separates_natural_candidates_from_context_observations(
+    tmp_path: Path, monkeypatch
+) -> None:
+    natural = _episode(episode_id="NATURAL")
+    natural.update(
+        {
+            "setup_id": "CANDIDATE-1",
+            "candidate_identity": "CANDIDATE-1",
+            "candidate_unit": "ONE_NATURAL_STRATEGY_SETUP",
+            "setup_origin_timestamp": "2026-08-03T09:00:00+00:00",
+            "strategy_dna_hash": "DNA-1",
+            "timeframe_evidence_hash": "EVIDENCE-1",
+            "negative_sampling_policy": "CANDIDATE_CONDITIONED_ONLY",
+            "strategy_timeframe_contract": {
+                "schema": "active_swing_strategy_timeframe_contract_v1",
+                "entry_timeframe": "1h",
+                "setup_timeframe": "4h",
+                "required_timeframes": ["1h", "4h"],
+            },
+        }
+    )
+    generic = _episode(episode_id="GENERIC")
+    path = tmp_path / "data/market_context/private/entry-episodes.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(natural) + "\n" + json.dumps(generic) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(outcomes, "_load_current_frames", lambda *_a, **_k: {})
+
+    report = outcomes.settle_entry_episodes(
+        tmp_path,
+        observed_at=datetime(2026, 8, 3, 11, tzinfo=UTC),
+    )
+
+    assert report["episode_count"] == 2
+    assert report["natural_candidate_episode_count"] == 1
+    assert report["context_observation_episode_count"] == 1
+    assert report["natural_candidate_pending_episode_count"] == 1

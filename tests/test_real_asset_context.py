@@ -3,6 +3,7 @@ from __future__ import annotations
 from stocks.portfolio.real_assets import (
     active_swing_timeframe_context,
     opportunity_class,
+    product_identity_context,
     real_asset_context,
 )
 
@@ -24,9 +25,14 @@ def test_daily_confirmation_increases_context_not_entry_authority() -> None:
 
     assert context["score"] == 0.75
     assert context["higher_timeframe_risk_multiplier"] == 1.0
-    assert context["timing_15m_status"] == (
-        "UNAVAILABLE_RESEARCH_CONTRACT_FORBIDS_15M"
-    )
+    assert context["timing_15m_status"] == "NOT_OBSERVED"
+
+
+def test_fifteen_minute_is_tactical_context_not_standalone_authority() -> None:
+    context = active_swing_timeframe_context(["15m", "1h", "4h", "1d"])
+    assert context["classification"] == "TACTICAL_SWING_CONTEXT_AVAILABLE"
+    assert context["timing_15m_status"] == "AVAILABLE"
+    assert context["standalone_entry_allowed"] is False
 
 
 def test_real_asset_classification_precedes_strategy_family() -> None:
@@ -80,3 +86,26 @@ def test_real_asset_context_preserves_missing_specialized_inputs() -> None:
         "OBSERVATION_ONLY_PENDING_ABLATION"
     )
     assert context["execution_authority"] == "NONE"
+    assert context["product_identity"]["physical_structure_verified"] is False
+    assert "PHYSICAL_PRODUCT_STRUCTURE_NOT_CURRENTLY_VERIFIED" in context[
+        "product_identity"
+    ]["blockers"]
+
+
+def test_verified_physical_structure_does_not_imply_shariah_eligibility() -> None:
+    identity = product_identity_context(
+        {
+            "commodity_exposure_type": "PHYSICAL_COMMODITY",
+            "product_identity_status": "VERIFIED_PHYSICAL_STRUCTURE",
+            "physical_structure_verified": True,
+            "product_identity_screened_at": "2026-08-12T00:00:00Z",
+            "product_identity_expires_at": "2026-09-11T23:59:59Z",
+            "product_identity_source_count": 1,
+            "shariah_product_status": "ATTESTATION_REQUIRED",
+        }
+    )
+
+    assert identity["physical_structure_verified"] is True
+    assert identity["shariah_is_separate_from_physical_structure"] is True
+    assert identity["deployment_eligible"] is False
+    assert identity["blockers"] == ["SHARIAH_PRODUCT_ATTESTATION_REQUIRED"]

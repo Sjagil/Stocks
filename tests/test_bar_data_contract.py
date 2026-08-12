@@ -118,7 +118,7 @@ def test_historical_bar_request_is_disabled_until_data_phase() -> None:
 
 
 def test_bar_request_blocks_invalid_eodhd_intraday_planning() -> None:
-    with pytest.raises(ValueError, match="FORBIDDEN_SWING_TIMEFRAME"):
+    with pytest.raises(ValueError, match="EODHD is only enabled for daily"):
         validate_bar_request_fields(
             con_id=265598,
             security_type=IbkrSecurityType.STK,
@@ -293,7 +293,7 @@ def test_plan_bar_request_queue_blocks_invalid_policy() -> None:
         plan_bar_request_queue([_bar_request()], policy=BarRequestPolicy(request_timeout_seconds=60.0))
 
 
-def test_plan_bar_request_queue_rejects_legacy_fifteen_minute_request() -> None:
+def test_plan_bar_request_queue_accepts_read_only_fifteen_minute_request() -> None:
     eodhd = _bar_request()
     ibkr = HistoricalBarRequest(
         con_id=265598,
@@ -307,12 +307,10 @@ def test_plan_bar_request_queue_rejects_legacy_fifteen_minute_request() -> None:
 
     plan = plan_bar_request_queue([eodhd, ibkr])
 
-    assert plan["status"] == "NO_GO"
-    assert plan["queued_count"] == 1
-    assert plan["rejected_requests"][0]["reason"] == (
-        "FORBIDDEN_SWING_TIMEFRAME:15m"
-    )
-    assert plan["source_counts"] == {"IBKR": 0, "EODHD": 1}
+    assert plan["status"] == "GO"
+    assert plan["queued_count"] == 2
+    assert plan["rejected_requests"] == []
+    assert plan["source_counts"] == {"IBKR": 1, "EODHD": 1}
     assert plan["policy"]["request_timeout_seconds"] == 60
     assert plan["policy"]["max_retries"] == 3
     assert plan["financial_calls"]["place_order"] == 0
